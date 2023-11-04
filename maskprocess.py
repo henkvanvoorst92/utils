@@ -1,0 +1,471 @@
+import numpy as np
+import itertools
+import math
+import torch
+from numba import njit
+from torch import nn
+import SimpleITK as sitk
+from scipy.ndimage.measurements import label
+from scipy.ndimage.filters import gaussian_filter
+
+def sitk_dilate_mask(mask,radius_mm, dilate_2D=False):
+	
+	radius_3d = [int(math.floor(radius_mm / mask.GetSpacing()[0])),
+			 int(math.floor(radius_mm / mask.GetSpacing()[1])),
+			 int(math.floor(radius_mm / mask.GetSpacing()[2]))]
+	if dilate_2D:
+		radius_3d[2] = 0
+	
+	dilate = sitk.BinaryDilateImageFilter()
+	dilate.SetBackgroundValue(0)
+	dilate.SetForegroundValue(1)
+	dilate.SetKernelRadius(radius_3d)
+	return dilate.Execute(mask)
+
+def sitk_dilate_mm(mask,kernel_mm, background=0, foreground=1):
+	
+	if isinstance(kernel_mm,int):
+		k0 = k1 = k2 = kernel_mm
+	elif isinstance(kernel_mm,tuple) or isinstance(kernel_mm,list):
+		k0, k1, k2 = kernel_mm
+	
+	kernel_rad = (int(np.floor(k0/mask.GetSpacing()[0])),
+			 int(np.floor(k1/mask.GetSpacing()[1])),
+			 int(np.floor(k2/mask.GetSpacing()[2])))
+	
+	dilate = sitk.BinaryDilateImageFilter()
+	dilate.SetBackgroundValue(background)
+	dilate.SetForegroundValue(foreground)
+	dilate.SetKernelRadius(kernel_rad)
+	return dilate.Execute(mask)
+
+def sitk_erode_mm(mask,kernel_mm, background=0, foreground=1):
+	
+	if isinstance(kernel_mm,int):
+		k0 = k1 = k2 = kernel_mm
+	elif isinstance(kernel_mm,tuple) or isinstance(kernel_mm,list):
+		k0, k1, k2 = kernel_mm
+	
+	kernel_rad = (int(np.floor(k0/mask.GetSpacing()[0])),
+			 int(np.floor(k1/mask.GetSpacing()[1])),
+			 int(np.floor(k2/mask.GetSpacing()[2])))
+	
+	erode = sitk.BinaryErodeImageFilter()
+	erode.SetBackgroundValue(background)
+	erode.SetForegroundValue(foreground)
+	erode.SetKernelRadius(kernel_rad)
+	return erode.Execute(mask)
+
+def compute_volume(mask: sitk.SimpleITK.Image):
+	# mask is an sitk image
+	# used to compute the volume in ml for foreground
+	sp = mask.GetSpacing()
+	vol_per_vox = sp[0]*sp[1]*sp[2]
+	
+	m = sitk.GetArrayFromImage(mask)
+	voxels = m.sum()
+	#volume in ml
+	tot_volume = vol_per_vox*voxels/1000
+	return tot_volume
+
+def np_larges_cc(seg):
+	labels, nc = label(seg) # uses scipy.ndimage.measurements
+	unique, counts = np.unique(labels, return_counts=True) # unique connected components
+	unique, counts = unique[1:], counts[1:]
+	v = unique[np.argmax(counts)] # cc's larger than min_count
+	return (labels==v)*1
+
+def sitk_select_components_minsize(mask: sitk.SimpleITK.Image, #sitk mask to extract connected components from
+									min_vol_ml=1):
+	component_image = sitk.ConnectedComponent(mask)
+	SC = sitk.RelabelComponent(component_image, sortByObjectSize=True)
+	sc = sitk.GetArrayFromImage(SC)
+	ccs2use = []
+	for cc in np.unique(sc)[1:]:
+		vol = compute_volume(SC==cc)
+		ccs2use.append(cc)
+		if vol<min_vol_ml:
+			break
+	lcc = (SC>0) & (SC <= ccs2use[-1])
+	return lcc
+
+def remove_small_cc(seg,min_count=100):
+	# filters out small connected components
+	labels, nc = label(seg) # uses scipy.ndimage.measurements
+	unique, counts = np.unique(labels, return_counts=True) # unique connected components
+	v = unique[counts>min_count] # cc's larger than min_count
+	out = ((labels*np.isin(labels,v)*1)*(seg>0)>0)*1 #combine all the above in a binary segmentation
+	return out
+
+def get_min_voxcount(min_cc_vol,spacing):
+	vol_per_vox = np.product(np.array(spacing))
+	return [int(round(cc/vol_per_vox)) for cc in min_cc_vol]
+
+def get_largest_cc(mask):
+	labels, nc = label(mask) # uses scipy.ndimage.measurements
+	unique, counts = np.unique(labels, return_counts=True) # unique connected components
+	unique, counts = unique[1:], counts[1:]
+	ix = np.argmax(counts)+1
+	out = (labels==ix)*1
+	return out
+
+def lower_upper_ix(mask,
+				   z_difference=150,
+				   z = -1,
+				   foreground=1,
+				   min_area=1000):
+
+	"""
+	Runs in a max from top to bottom of the head, finds
+	the top slice where area>min_area and goes down 
+	subsequently to z_difference mm below that point to
+	return the bottom slice
+	"""
+	
+	zdim = mask.GetSize()[z]
+	for i in range(0,zdim):
+		slice_id = zdim - i - 1
+		slice_mask = mask[:, :, slice_id]
+		label_info_filter = sitk.LabelStatisticsImageFilter()
+		label_info_filter.Execute(slice_mask,slice_mask)
+		area = label_info_filter.GetCount(foreground) * mask.GetSpacing()[0] * mask.GetSpacing()[1]
+		if area>min_area:
+			break
+	top_slice = slice_id
+	max_distance = mask.GetSpacing()[z]*zdim # the z-distance that is available in the mask
+	bottom_slice = top_slice - int(z_difference/mask.GetSpacing()[z])
+	if bottom_slice<0:
+		bottom_slice = 0
+			
+	return (bottom_slice, top_slice, area, max_distance)
+
+
+def np_slicewise(mask, funcs, repeats=1, dim=0):
+	"""
+	Applies a list of functions iteratively (repeats) slice by slice of an 3D np volume
+	mask: mask to do operation on
+	funcs: list of functions applied consecutively
+	repeats: each function is applied for a set number
+	dim: dimension to do operation over (default is z dim)
+	"""
+	if isinstance(mask,sitk.SimpleITK.Image):
+		mask = sitk.GetArrayFromImage(mask)
+
+	out = np.zeros_like(mask)
+	for sliceno in range(mask.shape[dim]):
+		if dim==0:
+			m = mask[sliceno,:,:]
+		elif dim==1:
+			m = mask[:,sliceno,:]
+		elif dim==2:
+			m = mask[:,:,sliceno]
+		for r in range(repeats):
+			for func in funcs:
+				m = func(m)
+		if dim==0:
+			out[sliceno,:,:] = m
+		elif dim==1:
+			out[:,sliceno,:] = m
+		elif dim==2:
+			out[:,:,sliceno] = m
+	return out
+
+def np_multidim_slicewise(mask,funcs,repeats=1,dims=[0,1,2,0,1,2]):
+	#runs np slicewise consecutively over dims
+	#dims: a list with dimensions running each dim once
+	for d in dims:
+		mask = np_slicewise(mask, funcs, repeats=repeats, dim=d)
+	return mask
+
+def get_list_boundaries(dct, ixs=[0,1,2]):
+	out = []
+	for i in ixs:
+		out.extend([dct[i]['lower'],dct[i]['upper']])
+	return out
+
+
+def MultipleMorphology(mask,
+					   operations,
+					   mm_rads,
+					   foreground=1):
+	"""
+	Consecutively performs multiple morphology operations
+	"""
+	if len(operations) != len(mm_rads):
+		print('Error: number of operations is not equal to number of radius (mm_rads)')
+
+	rads_3d = []
+	for rad in mm_rads:
+		tmp = (int(math.floor(rad / mask.GetSpacing()[0])),
+			   int(math.floor(rad / mask.GetSpacing()[1])),
+			   int(math.floor(rad / mask.GetSpacing()[2])))
+		rads_3d.append(tmp)
+
+	for r, oper in zip(rads_3d, operations):
+		oper.SetBackgroundValue(abs(foreground - 1))
+		oper.SetForegroundValue(foreground)
+		oper.SetKernelRadius(r)
+		mask = oper.Execute(mask)
+
+	return mask
+
+
+## this code comes from the CTA2NCCT train file and might interfere with similar named functions above
+class Morphology(nn.Module):
+	"""
+	Pytorch implementation:
+	Class performs erosion (iters<0) or dilation (iters>0) for a specific
+	number of iterations on the foreground mask of an image. 
+	The main benefit is that these operations can be performed on a 
+	GPU during training if device is set to 'cuda'. This results
+	in up to 20x (10x more likely) faster mask computation. On 'cpu' this operation is
+	slower than multiple scipy erosion or dilation steps.
+	"""
+	
+	def __init__(self, iters=35, background=-1, 
+					connect=8, type=torch.float32, 
+					device='cuda', combine='OR', dim3D=False):
+		super(Morphology, self).__init__()
+
+		self.dim3D = dim3D
+		if iters>=0:
+			self.operation = 'dilate'
+			self.iters = iters
+		else:
+			self.operation = 'erode'
+			self.iters = abs(iters)
+
+		self.background = background
+		self.type = type
+		self.device = device
+		self.connectivity = connect
+		self.combine = combine # how to combine multiple images into a mask
+		
+		if connect==8:
+			if not self.dim3D:
+				self.kernel = torch.tensor([
+						[1, 1, 1],
+						[1, 1, 1],
+						[1, 1, 1] ], 
+						dtype=self.type
+						).unsqueeze(0).unsqueeze(0) # shape: (1, 1, 3, 3) = (Batch,Channel,H,W)
+			else:
+				self.kernel = torch.ones([3,3,3],dtype=self.type).unsqueeze(0).unsqueeze(0) # shape: (1, 1, 3, 3, 3) = (Batch,Channel,D,H,W)
+			
+		elif connect==4:
+			if not self.dim3D:
+				self.kernel = torch.tensor([
+						[0, 1, 0],
+						[1, 1, 1],
+						[0, 1, 0] ], 
+						dtype=self.type
+						).unsqueeze(0).unsqueeze(0) # shape: (1, 1, 3, 3) = (Batch,Channel,H,W)
+			else:
+				self.kernel = torch.tensor([[[0, 1, 0],[1, 1, 1],[0, 1, 0]],
+									[[0, 1, 0],[1, 1, 1],[0, 1, 0]],
+									[[0, 1, 0],[1, 1, 1],[0, 1, 0]]],dtype=self.type
+									).unsqueeze(0).unsqueeze(0) # shape: (1, 1, 3, 3,3) = (Batch,Channel,D,H,W)
+		else:
+			kernel = None
+		
+		if not self.dim3D:
+			conv = nn.Conv2d(1, 1, kernel_size=self.kernel.shape[-1],
+					stride=1, padding=1, bias=False)
+		else:
+			conv = nn.Conv3d(1, 1, kernel_size=self.kernel.shape[-1],
+					stride=1, padding=1, bias=False)
+
+		with torch.no_grad():
+			conv.weight = nn.Parameter(self.kernel)
+		self.conv = conv.type(self.type).to(self.device)
+	
+	# pass only img if on same device
+	def __call__(self,img):
+		# first construct the mask (foreground=1) from the image
+		mask = (img>self.background).type(self.type)
+		if self.iters>0:
+			# repeatedly erode or dilate
+			for i in range(self.iters):
+				if self.operation=='dilate':
+					mask = (self.conv(mask)>0).type(self.type)
+				if self.operation=='erode':
+					mask = (self.conv(mask)>=self.connectivity).type(self.type)
+		# final threshold after erosion or dilation
+		return mask
+
+def boundary_mask(mask, dims=None, foregroundval=1):
+	"""
+	Function to identify for each dimension of a 3D
+	mask what the lower and upper starting points
+	are for the foreground. This can be used to crop
+	the image for storage and loading purposes.
+
+	Output:
+	dictionary with: dct[dimension] = {lower:value, upper:value}
+
+	"""
+
+	if dims is None:
+		dims = [0, 1, 2]
+
+	dimdct = {}
+	for dim in dims:
+		tmpdct = {}
+		notfoundm1, notfoundm2 = True, True
+		s = int(mask.shape[dim])
+		for i in range(1, int(s)):
+			if dim == 0:
+				m1 = mask[i, :, :].max()
+				m2 = mask[s - i, :, :].max()
+			elif dim == 1:
+				m1 = mask[:, i, :].max()
+				m2 = mask[:, s - i, :].max()
+			elif dim == 2:
+				m1 = mask[:, :, i].max()
+				m2 = mask[:, :, s - i].max()
+
+			if (m1 >= foregroundval) & notfoundm1:
+				tmpdct['lower'] = i
+				notfoundm1 = False
+			if (m2 >= foregroundval) & notfoundm2:
+				tmpdct['upper'] = s - i
+				notfoundm2 = False
+			if (notfoundm1 == False) & (notfoundm2 == False):
+				break
+		dimdct[dim] = tmpdct
+	return dimdct
+
+def batch_boundaries(batch):
+	"""
+	Computes per batch of masks the boundaries
+	"""
+	if isinstance(batch, torch.Tensor):
+		batch = batch.numpy()
+		
+	boundaries = []
+	for i in range(batch.shape[0]):
+		mask = batch[i,:,:]
+		dct = boundary_mask(np.expand_dims(mask,2),dims=[0,1])
+		b = [[dct[0]['lower'],dct[0]['upper']],
+			 [dct[1]['lower'],dct[1]['upper']]]
+		boundaries.append(b)
+	
+	boundaries = np.stack(boundaries).astype(batch.dtype)
+	return boundaries
+
+def local_mask(mask,margin):
+	# computes a square mask surrounding the foreground
+	# adds a margin around min and max indices of mask
+	bd = boundary_mask(mask,dims=[0,1,2],foregroundval=1)
+	m2 = np.zeros_like(mask)
+	m2[bd[0]['lower']-margin:bd[0]['upper']+margin,
+	   bd[1]['lower']-margin:bd[1]['upper']+margin,
+	   bd[2]['lower']-margin:bd[2]['upper']+margin] = 1
+	return m2
+
+def staple(segmentations, foregroundValue = 1, threshold = 0.5):
+	#https://colab.research.google.com/github/matjesg/deepflash2/blob/master/nbs/09_gt.ipynb#scrollTo=66AXN5S-fbmQ
+	#https://towardsdatascience.com/how-to-use-the-staple-algorithm-to-combine-multiple-image-segmentations-ce91ebeb451e
+	'STAPLE: Simultaneous Truth and Performance Level Estimation with simple ITK'
+	#sitk = import_sitk()
+	if np.all([isinstance(s,np.ndarray) for s in segmentations]):
+		segmentations = [sitk.GetImageFromArray(x) for x in segmentations]
+	STAPLE_probabilities = sitk.STAPLE(segmentations)
+	STAPLE = STAPLE_probabilities > threshold
+	#STAPLE = sitk.GetArrayViewFromImage(STAPLE)
+	return sitk.GetArrayFromImage(STAPLE)
+
+@njit(parallel=True,fastmath=True)
+def get_mask_coordinates(mask:np.ndarray,foreground=1, is3D=False):
+	"""
+	returns a list of coordinates from a mask 
+	with foreground pixels
+	"""
+	
+	f_coordinates = []
+	for i in range(mask.shape[0]):
+		for j in range(mask.shape[1]):
+			if not is3D:
+				if mask[i,j]==foreground:
+					f_coordinates.append([i,j])
+			else:
+				for k in range(mask.shape[2]):
+					if mask[i,j,k]==foreground:
+						f_coordinates.append([i,j,k])
+	return f_coordinates
+
+def np_volume(mask:np.ndarray,spacing):
+	vol_per_vox = np.product(np.array(spacing))
+	return vol_per_vox*mask.sum()
+
+def get_nonzero_slices(mask:np.ndarray):
+	#returns indices of slices that are not zero
+	mx = mask.argmax(axis=1).argmax(axis=1)
+	return [i for i in range(len(mx)) if mx[i]>0]
+
+def torch_init_gauss_conv3d(kernel_size,crop_bound=0,device='cpu',ttype=torch.float32, pad='same'):
+	#kernel_size (int/tuple): size of 3 dims of a cube
+	#crop_bound: if>0 the boundaries of all dims are set to 0 (excludes edges artefacts when used for inference)
+	#returns conv layer with gauss weights and the kernel
+	if isinstance(kernel_size,int):
+		kernel_size = [kernel_size,kernel_size,kernel_size]
+	
+	low = int(kernel_size[0]/2)-1
+	high = low+1
+
+	mc1 = [coords for coords in itertools.combinations_with_replacement([low,high,low],3)]
+	mc2 = [coords for coords in itertools.combinations_with_replacement([high,low,high],3)]
+	mid_coords = list(set([*mc1,*mc2]))
+	n = np.zeros(kernel_size)
+	for mc in mid_coords:
+		 n[mc] = 1
+	kernel = gaussian_filter(n,sigma=np.array(kernel_size)/6,order=0, mode='constant',cval=0)
+	if crop_bound>0:
+		# set weights of boundaries to zero to exclude edges
+		m = np.zeros(kernel_size)
+		m[crop_bound:-crop_bound,crop_bound:-crop_bound,crop_bound:-crop_bound] = 1
+		kernel = kernel*m
+	#acertain weighting adds up to one
+	kernel = (kernel*(1/kernel.sum()))
+	kernel = torch.tensor(kernel).unsqueeze(0).unsqueeze(0).type(ttype).to(device)
+	
+	conv = nn.Conv3d(1, 1, kernel_size=kernel_size,stride=1, padding=pad, bias=False)
+	conv.weight = nn.Parameter(kernel)            
+	
+	conv = conv.type(ttype).to(device)
+	for param in conv.parameters():
+		param.requires_grad = False
+	return conv,kernel
+
+def lesion_count_volstat(seg,spacing=None,min_size=1):
+	#counts the number of separate lesions in segmentation (seg)
+	#and computs avg and median volume per lesion
+	#if spacing is geven min_size is in mm3
+	if spacing is not None:
+		zsp,ysp,xsp = spacing
+		vol_per_vox = zsp*ysp*xsp
+		min_size = min_size/vol_per_vox
+	# filters out small connected components
+	labels, nc = label(seg) # uses scipy.ndimage.measurements
+	unique, counts = np.unique(labels, return_counts=True) # unique connected components
+	v = unique[counts>=min_size] # cc's larger than min_count
+	counts = counts[(counts>min_size)&(unique!=0)]
+	
+	n_lesions = len(counts)
+	avg_size = np.mean(counts)
+	median_size = np.median(counts)
+	if spacing is not None:
+		avg_size = avg_size*vol_per_vox
+		median_size = median_size*vol_per_vox
+		
+	return n_lesions, avg_size, median_size
+
+def tolerance_adj(img,digits=4):
+	spacing = [round(sp,digits) for sp in img.GetSpacing()]
+	direction = [round(d,digits) for d in img.GetDirection()]
+	origin = [round(o,digits) for o in img.GetOrigin()]
+	
+	img.SetSpacing(spacing)
+	img.SetDirection(direction)
+	img.SetOrigin(origin)
+	return img
