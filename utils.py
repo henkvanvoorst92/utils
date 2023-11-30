@@ -4,7 +4,10 @@ import argparse
 from torch import nn
 import ast
 import json
-from datetime import datetime
+import re
+import pandas as pd
+from datetime import datetime, timedelta
+from typing import List
 
 def exists(p,create=True):
 	if not os.path.exists(p):
@@ -66,6 +69,36 @@ def is_odd(num):
 def make_odd(num):
 	return np.ceil((num + 1)/2)*2 - 1
 
+
+def all_tag_values(dcm, mdct, stringconvert=False):
+	# returns a set of dicom tags stripped from dcm (a dicom file)
+	# mdct is a dictionary with
+	# keys = dicom tag number (example: (0x0020, 0x0032))
+	# values = corresponding dicom tag name ('ImagePositionPatient')
+	# stringconvert is optional and converts all tags to strings
+	out = []
+	for k, v in mdct.items():
+		tag = get_tag_value(dcm, k, v)
+		if stringconvert:
+			tag = str(tag)
+		out.append(tag)
+	return out
+
+
+def create_mdct(dcm):
+	# extracts all metadata names and IDs
+	mdct = {}
+	# iterating over items does not work for v
+	for k in dcm.keys():
+		try:
+			n = re.subn('[ ]()', '', str(dcm[k].name))[0]
+			if n == 'PixelData':
+				continue
+			mdct[n] = k
+		except:
+			print('Does not work:', dcm[k])
+	return mdct
+
 def get_tag_value(dcm, tagno, tagname):
 	"""
 	Returns the dicom tag value based on e a string name (tagname)
@@ -80,19 +113,23 @@ def get_tag_value(dcm, tagno, tagname):
 			out = np.NaN
 	return out
 
-def all_tag_values(dcm,mdct, stringconvert=False):
-	# returns a set of dicom tags stripped from dcm (a dicom file)
-	# mdct is a dictionary with
-		#keys = dicom tag number (example: (0x0020, 0x0032))
-		# values = corresponding dicom tag name ('ImagePositionPatient')
-	# stringconvert is optional and converts all tags to strings
-	out = []
-	for k,v in mdct.items():
-		tag = get_tag_value(dcm,k,v)
-		if stringconvert:
-			tag = str(tag)
-		out.append(tag)
-	return out
+
+## function to extract all dicom tags
+def get_tagnos_tagnames(dcm):
+	"""
+    Returns lists of tag numbers and names from dicom
+    tagno example: (0x0001,0x0001)
+    """
+	tagnos = list(dcm.keys())
+	name2no = {}
+	no2name = {}
+	for tagno in tagnos:
+		tagname = str(dcm[tagno].name)
+		tagname = tagname.replace(' ', '')
+		name2no[tagname] = tagno
+		no2name[tagno] = tagname
+	return name2no, no2name
+
 
 def try_t_str(datestring:str, t_str:list):
 	"""
@@ -146,3 +183,42 @@ def list_files(startpath):
         subindent = ' ' * 4 * (level + 1)
         for f in files:
             print('{}{}'.format(subindent, f))
+
+
+def compute_time_differences(datetime_list):
+	# Use list comprehension to compute the difference between each datetime and the previous one
+	time_differences = [datetime_list[i] - datetime_list[i - 1] for i in range(1, len(datetime_list))]
+
+	time_differences.insert(0, 0)  # or timedelta(0) if you prefer
+
+	return time_differences
+
+
+def datetime2str(datetimes: List[datetime],
+				 date_format: str = "%Y%m%d%H%M%S.%f") -> List[str]:
+	"""
+    Convert a list of datetime objects to a list of strings.
+
+    :param datetimes: List of datetime.datetime objects.
+    :param date_format: The format in which to convert the datetimes to strings.
+    :return: List of datetime strings in the given format.
+    """
+	return [dt.strftime(date_format) if dt is not None else '0' for dt in datetimes]
+
+
+def timedelta2str(timedeltas: List[timedelta]) -> List[str]:
+	"""
+    Convert a list of timedelta objects to a list of strings.
+    Each timedelta is represented by total seconds and microseconds.
+
+    :param timedeltas: List of datetime.timedelta objects.
+    :return: List of strings with each timedelta represented by "total_seconds.microseconds".
+    """
+	out = []
+	for td in timedeltas:
+		if td is None or isinstance(td, pd._libs.tslibs.nattype.NaTType):  # or np.isnan(td)
+			out.append('0')
+		else:
+			out.append('{}'.format(td.total_seconds()))
+
+	return out

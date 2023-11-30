@@ -3,6 +3,7 @@ import os
 import torch
 from torch import nn
 import SimpleITK as sitk
+import itk
 from scipy.ndimage.filters import gaussian_filter
 from utils.utils import rtrn_np, is_odd, make_odd
 
@@ -187,7 +188,42 @@ def tolerance_adj(img, digits=4):
 	img.SetOrigin(origin)
 	return img
 
+def sitk2itk(sitk_image):
+	sitk_array = sitk.GetArrayFromImage(sitk_image)
+	itk_image = itk.GetImageFromArray(sitk_array)
+	# SimpleITK and ITK have different conventions for image axes,
+	# so we may need to permute the axes of the ITK image to match the SimpleITK image
+	itk_image.SetSpacing(sitk_image.GetSpacing())
+	itk_image.SetOrigin(sitk_image.GetOrigin())
 
+	# Convert SimpleITK direction to ITK direction
+	direction = itk.matrix_from_array(np.array(sitk_image.GetDirection()).reshape(sitk_image.GetDimension(), -1))
+	#itk_image.SetDirection(direction)
+	return itk_image
 
+def itk2sitk(itk_image):
+	# ITK stores image data as a 1D array, so we need to reshape it to the correct dimensions
+	itk_array = itk.array_from_image(itk_image)
+	# Convert the numpy array to a SimpleITK Image
+	sitk_image = sitk.GetImageFromArray(itk_array)
+	# Set the spacing, origin, and direction to match the ITK image
+	sitk_image.SetSpacing(list(itk_image.GetSpacing()))
+	sitk_image.SetOrigin(list(itk_image.GetOrigin()))
+
+	# ITK direction cosines need to be converted to a SimpleITK direction
+	# direction = np.array(itk_image.GetDirection()).flatten()
+	# if itk_image.GetImageDimension() == 3:
+	#     # For 3D image, direction cosines need to be reordered
+	#     direction = direction[[0,3,6,1,4,7,2,5,8]]
+	# sitk_image.SetDirection(tuple(direction))
+
+	return sitk_image
+
+def sitk_add_tags(img, mdata, tags=['ExposureinmAs','KVP','CTDIvol']):
+    #add tags from pd.Dataframe (mdata) to image
+    for tag in tags:
+        tag_value = str(list(mdata['KVP'].values))
+        img.SetMetaData(tag,tag_value)
+    return img
 
 
