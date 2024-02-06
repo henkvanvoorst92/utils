@@ -1,11 +1,7 @@
 import numpy as np
 import os
-import torch
-from torch import nn
 import SimpleITK as sitk
 import itk
-from scipy.ndimage.filters import gaussian_filter
-from utils.utils import rtrn_np, is_odd, make_odd
 
 def dcm2sitk(input):
 	#http://insightsoftwareconsortium.github.io/SimpleITK-Notebooks/Python_html/03_Image_Details.html
@@ -25,13 +21,35 @@ def dcm2sitk(input):
 	image = reader.Execute()
 	return image
 
-def dcm2niix(dcm2niix_exe, filename, output_dir, input_dir):
-	#uses an executable to convort dicom to nifti
-	#!activate root
-	command = dcm2niix_exe + " -f "+filename+" -p y -z y -o"+ ' "'+ output_dir + '" "' + input_dir+ '"'
-	os.system(command)
 
-def assert_resliced_or_tilted(path,scanname='NCCT', ID=''):
+def dcm2niix(filename, input_dir, output_dir, dcm2niix=None, add_args=''):
+    # if no path defined to dcm2niix executable
+    if dcm2niix is None:
+        dcm2niix = 'dcm2niix'
+
+    command = dcm2niix + " -f " + filename + " -i y -z y -o" + ' "' + output_dir + '" "' + input_dir + '"' + add_args
+    os.system(command)
+
+def find_volume_nii(p, remove_small=None):
+    #if remove is an int small sized images are removed
+    maxz = 0
+    for f in os.listdir(p):
+        if not '.nii' in f:
+            continue
+        f = os.path.join(p,f)
+        img = sitk.ReadImage(f)
+        #print(f,img.GetSize())
+        if img.GetSize()[-1]>maxz:
+            maxz = img.GetSize()[-1]
+            img_out = img
+            file_out = f
+        if remove_small is not None:
+            if img.GetSize()[-1]<remove_small:
+                os.remove(f)
+    return file_out,img_out
+
+
+def assert_resliced_or_tilted(path,scanname='NCCT', ID='',file=None):
 	resl_tilted = [os.path.join(path,f) for f in os.listdir(path) \
 				   if ('tilt' in f.lower() or 'eq' in f.lower()) and scanname.lower() in f.lower()]
 	if len(resl_tilted)>0:
@@ -39,7 +57,10 @@ def assert_resliced_or_tilted(path,scanname='NCCT', ID=''):
 		print(ID, scanname,'tilted or resliced:', '\n', p_ncct, '\n n adjusted:',len(resl_tilted))
 		adjusted = True
 	else:
-		p_ncct = os.path.join(path,scanname+'.nii.gz')
+		if file is None:
+			p_ncct = os.path.join(path,scanname+'.nii.gz')
+		else:
+			p_ncct = file
 		adjusted = False
 	return p_ncct, adjusted
 
@@ -124,56 +145,6 @@ def Joint_Resample_img(ref_img,imgs, new_z_spacing=5, interpolator=sitk.sitkBSpl
 		imgs_out.append(resample.Execute(img))
 	return ref_img, imgs_out
 
-def gauss_filter_downsample(img, new_spacing, device='cuda', ttype=torch.float32, max_ksize=None):
-	# alternative: https://github.com/InsightSoftwareConsortium/SimpleITK-Notebooks/blob/b75721a121102cf972f942fad927751089a7cc80/Python/05_Results_Visualization.ipynb
-	#get 3d spacing to go to
-	if isinstance(new_spacing,int) or isinstance(new_spacing,float):
-		new_spacing = [new_spacing,new_spacing,new_spacing]
-	
-	#invert spacing for numpy array style
-	NS = [new_spacing[2],new_spacing[1],new_spacing[0]] 
-	x,y,z = list(img.GetSpacing())
-	SP = [z,y,x]
-	vox_red = [] #kernel size that can be used for slice reduction
-	mid = [] #middle index of kernel
-	for sp,ns in zip(SP,NS): #spacing, new spacing
-		size = round(ns/sp)
-		#get odd number for size
-		if not is_odd(size):
-			size = make_odd(size)
-		size = max(size,1)
-		use_size = int(size)
-		if max_ksize is not None:
-			use_size = min(use_size,max_ksize)
-
-		vox_red.append(use_size)
-		mid.append(int(np.floor(size/2)))
-	
-	#create gaussian kernel for convolution
-	n = np.zeros(vox_red)
-	n[mid[0],mid[1],mid[2]] = 1
-	kernel = gaussian_filter(n,sigma=np.array(vox_red)/6,order=0, mode='constant',cval=0)
-	kernel = torch.tensor(kernel).unsqueeze(0).unsqueeze(0)
-	#normalize kernel to sum up to 1
-	kernel = (kernel*(1/kernel.sum()))
-	#use torch for conv since it can be done on gpu
-	conv = nn.Conv3d(1, 1, kernel_size=vox_red,stride=1, padding='same', bias=False)
-	conv.weight = nn.Parameter(kernel)            
-	conv = conv.type(ttype).to(device)
-	for param in conv.parameters():
-		param.requires_grad = False
-	
-	#use input_img
-	input_img = sitk.GetArrayFromImage(img)
-	mn_hu = input_img.min()
-	if mn_hu<0: #add min (conv can not handle very negative values properly)
-		input_img += mn_hu*-1
-	input_img = torch.Tensor(input_img).unsqueeze(0).unsqueeze(0).type(ttype).to(device)
-	new_img = rtrn_np(conv(input_img))[0,0]
-	if mn_hu<0: #subtract min again
-		new_img += mn_hu
-	new_img = np2sitk(new_img,img)
-	return Resample_img(new_img, new_spacing=new_spacing, interpolator=sitk.sitkBSpline)
 
 def tolerance_adj(img, digits=4):
 	"""
@@ -227,3 +198,50 @@ def sitk_add_tags(img, mdata, tags=['ExposureinmAs','KVP','CTDIvol']):
     return img
 
 
+def n4_bias_field_correction(img, number_of_iterations=None):
+    # Read the image
+    img = sitk.Cast(img, sitk.sitkFloat32)
+
+    # Apply N4 Bias Field Correction
+    # The mask image is optional, if not provided the algorithm
+    # will compute a mask internally.
+    corrector = sitk.N4BiasFieldCorrectionImageFilter()
+
+    # Number of iterations per resolution level, more iterations
+    # may yield better results but will take longer to compute.
+    if number_of_iterations is None:
+        number_of_iterations = [50, 50, 50, 50]
+    corrector.SetMaximumNumberOfIterations(number_of_iterations)
+
+    return corrector.Execute(img)
+
+
+def ctp_exposure_weights(exposures):
+    exposures = np.array(exposures)
+    tot = exposures.sum()
+    weights = exposures / tot
+    return weights
+
+
+# t = mdata['AcquisitionDateTime']
+# td = mdata['timedifference']
+# exposures = mdata['ExposureinmAs'].astype(np.float32).values
+
+# wt_middle = 1/3
+
+# for i in range(1,len(exposures)-1):
+#     exps = exposures[i-1:i+2]
+#     expw = exps/exps.sum()
+#     if t is not None:
+#         td1, td3 = td[i], td[i+1]
+#         tot = td1+td3
+#         w1 = (1-td1/tot)*(2/3)
+#         w3 = (1-td3/tot)*(2/3)
+#         tw = np.array([w1,1/3,w3])
+#     else:
+#         tw = [1/3,1/3,1/3]
+#     w = tw*expw
+#     w = w/w.sum()
+#     break
+# print(tw,expw,w)
+# td

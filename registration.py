@@ -5,11 +5,10 @@ import sys
 import argparse
 from utils.preprocess import sitk2itk, itk2sitk
 
-
 #registration with itk is 100x faster than simpleitk
-def itk_register(fixed_image, moving_image, param_file, clip_bounds=None):
+def itk_register(fixed_image, moving_image, param_file, fix_clip=None, moving_clip=None):
     # param file is path to a .txt registration parameters file
-
+    clip_reg = False
     return_sitk = False #by default an itk image is returned
     # transform sitk images if required
     if isinstance(fixed_image, sitk.SimpleITK.Image):
@@ -24,9 +23,12 @@ def itk_register(fixed_image, moving_image, param_file, clip_bounds=None):
     moving_image = itk.cast_image_filter(moving_image, ttype=(type(moving_image), itk.Image.F3))
 
     # if bounds are defined registration is first performed on
-    if clip_bounds is not None:
+    if fix_clip is not None:
         fixed_image_clip = itk.clamp_image_filter(fixed_image, bounds=clip_bounds)
+        clip_reg = True
+    if moving_clip is not None:
         moving_image_clip = itk.clamp_image_filter(moving_image, bounds=clip_bounds)
+        clip_reg = True
 
     # Import Custom Parameter Map
     parameter_object = itk.ParameterObject.New()
@@ -37,7 +39,7 @@ def itk_register(fixed_image, moving_image, param_file, clip_bounds=None):
     parameter_object.SetParameter(0, "WriteResultImage", "true")
 
     # Call registration function
-    if clip_bounds is not None:
+    if clip_reg:
         __, transform_parameters = itk.elastix_registration_method(
             fixed_image_clip, moving_image_clip,
             parameter_object=parameter_object,

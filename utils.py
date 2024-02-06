@@ -1,21 +1,21 @@
 import numpy as np
 import os
 import argparse
-from torch import nn
 import ast
 import json
 import re
 import pandas as pd
 from datetime import datetime, timedelta
 from typing import List
+import SimpleITK as sitk
+import logging
+import torch
 
 def exists(p,create=True):
 	if not os.path.exists(p):
 		if create:
 			os.makedirs(p)
 
-def rtrn_np(img): # returns numpy array from torch tensor (on cuda)
-	return img.detach().cpu().numpy()
 
 def args2dct(args):
 	dct = vars(args)
@@ -42,7 +42,7 @@ def load_opt_json(root, org_opt=None):
 		dct = json.load(f)
 	for k,v in dct.items():
 		if k=='norm':
-			dct[k] = getattr(nn,v.strip("<>''").split('.')[-1])
+			dct[k] = getattr(torch.nn,v.strip("<>''").split('.')[-1])
 
 	dct['loc_checkpoints'] = root
 	if org_opt is not None:
@@ -69,21 +69,21 @@ def is_odd(num):
 def make_odd(num):
 	return np.ceil((num + 1)/2)*2 - 1
 
-
-def all_tag_values(dcm, mdct, stringconvert=False):
+def all_tag_values(dcm, mdct=None, stringconvert=False):
 	# returns a set of dicom tags stripped from dcm (a dicom file)
 	# mdct is a dictionary with
 	# keys = dicom tag number (example: (0x0020, 0x0032))
 	# values = corresponding dicom tag name ('ImagePositionPatient')
 	# stringconvert is optional and converts all tags to strings
 	out = []
+	if mdct is None:
+		mdct = create_mdct(dcm)
 	for k, v in mdct.items():
 		tag = get_tag_value(dcm, k, v)
 		if stringconvert:
 			tag = str(tag)
 		out.append(tag)
 	return out
-
 
 def create_mdct(dcm):
 	# extracts all metadata names and IDs
@@ -222,3 +222,47 @@ def timedelta2str(timedeltas: List[timedelta]) -> List[str]:
 			out.append('{}'.format(td.total_seconds()))
 
 	return out
+
+def np2sitk(arr: np.ndarray, original_img: sitk.SimpleITK.Image):
+	img = sitk.GetImageFromArray(arr)
+	img.SetSpacing(original_img.GetSpacing())
+	img.SetOrigin(original_img.GetOrigin())
+	img.SetDirection(original_img.GetDirection())
+	# this does not allow cropping (such as removing thorax, neck)
+	#img.CopyInformation(original_img)
+	return img
+
+
+def initialize_logging(log_file_path):
+	# Configure the basic settings for global logging in one file (allways keeps runin in kernel)
+	logging.basicConfig(filename=log_file_path,
+						level=logging.DEBUG,  # Capture all levels of logging messages
+						format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+						# Include timestamp, logger name, log level, and log message
+						datefmt='%Y-%m-%d %H:%M:%S')  # Format for the timestamp
+# print(f"Logging initialized. Log messages will be written to {log_file_path}")
+def initialize_logger_handler(log_file_path, remove_existing=False):
+	if remove_existing and os.path.exists(log_file_path):
+		os.remove(log_file_path)
+
+	# Configure the logger
+	logger = logging.getLogger(log_file_path)  # Get custom logger
+
+	# Create a file handler that logs messages to the specified file
+	file_handler = logging.FileHandler(log_file_path)
+	file_handler.setLevel(logging.DEBUG)
+
+	# Create a formatter and set it for the file handler
+	formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+	file_handler.setFormatter(formatter)
+
+	# Add the file handler to the logger
+	logger.addHandler(file_handler)
+
+	return logger, file_handler
+
+
+def stop_logging(logger, file_handler):
+	logger.removeHandler(file_handler)  # Remove the specified handler
+	file_handler.close()  # Close the handler to free up resources
+

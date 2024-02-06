@@ -437,6 +437,9 @@ def torch_init_gauss_conv3d(kernel_size,crop_bound=0,device='cpu',ttype=torch.fl
 		param.requires_grad = False
 	return conv,kernel
 
+
+
+
 def lesion_count_volstat(seg,spacing=None,min_size=1):
 	#counts the number of separate lesions in segmentation (seg)
 	#and computs avg and median volume per lesion

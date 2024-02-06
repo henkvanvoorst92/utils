@@ -138,7 +138,7 @@ def process_ctp_frames(mdata,
                     exists(sloc_reg_nii)
                     sitk.WriteImage(start_img, os.path.join(sloc_reg_nii, str(no) + '.nii.gz'))
             else:
-                reg_img, transforms = itk_register(start_img, img, param_file, clip_bounds=clip_bounds)
+                reg_img, transforms = itk_register(start_img, img, param_file, fix_clip=clip_bounds, moving_clip=clip_bounds)
                 reg_img = sitk.Cast(reg_img, sitk.sitkInt16)
                 out4D_reg.append(reg_img)
                 # store registered file
