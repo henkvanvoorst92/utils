@@ -67,6 +67,30 @@ def assert_resliced_or_tilted(path,scanname='NCCT', ID='',file=None):
 def sitk_flip_AP(img: sitk.SimpleITK.Image):
 	return sitk.Flip(img, [False, True, False])
 
+def sitk_rotate(image, degrees, interpolator=sitk.sitkLinear):
+
+    size = image.GetSize()
+    spacing = image.GetSpacing()
+    center = (size[0] * spacing[0] / 2.0, size[1] * spacing[1] / 2.0, size[2] * spacing[2] / 2.0)
+
+    # Create a 3D Euler transformation
+    transform = sitk.Euler3DTransform()
+    transform.SetCenter(center)
+    transform.SetRotation(0, 0, np.radians(degrees))  # Rotation around the Z-axis by 30 degrees
+
+    # Resample the image using the transform
+    resampler = sitk.ResampleImageFilter()
+    resampler.SetReferenceImage(image)
+    resampler.SetTransform(transform)
+    resampler.SetInterpolator(interpolator)
+    resampler.SetDefaultPixelValue(0)
+    resampled_image = resampler.Execute(image)
+
+    return resampled_image
+
+def sitk_flip_lateral(img: sitk.SimpleITK.Image):
+    return sitk.Flip(img, [True,False,False])
+
 def np2sitk(arr: np.ndarray, original_img: sitk.SimpleITK.Image):
 	img = sitk.GetImageFromArray(arr)
 	img.SetSpacing(original_img.GetSpacing())
@@ -87,6 +111,14 @@ def RescaleInterceptHU(img):
 def set_background(arr, mask, background=-1024):
 	out = arr[mask==0] = background
 	return out
+
+#normalization of images
+def np_znorm(arr):
+    return (arr-arr.mean())/arr.std()
+
+def sitk_znorm(img):
+    return np2sitk(np_znorm(sitk.GetArrayFromImage(img)),img)
+
 
 def new_img_size(img,new_spacing):
 	if isinstance(new_spacing,int) or isinstance(new_spacing,float):
@@ -125,6 +157,36 @@ def Resample_slices(img, new_z_spacing=5, interpolator=sitk.sitkBSplineResampler
 	img = resample.Execute(img)
 	img = sitk.Cast(img, sitk.sitkInt32)
 	return img
+
+
+def resample_registered_images(template_image, adjust_image, interpolator=sitk.sitkNearestNeighbor):
+	"""
+    resamples and crops the adjust_image to the template image
+
+    use interpolator NearestNeighbor for masks, Bspline3 for images as adjust_image
+    """
+	# Initialize the ResampleImageFilter
+	resample = sitk.ResampleImageFilter()
+	# Set the template image (formerly known as mra_image) as the reference
+	resample.SetReferenceImage(template_image)
+
+	# Set the interpolation method to linear
+	resample.SetInterpolator(interpolator)
+
+	# Use an affine transform for resampling the adjust image (formerly known as t1_image)
+	resample.SetTransform(sitk.AffineTransform(adjust_image.GetDimension()))
+
+	# Match the spacing, size, direction, and origin to the template image
+	resample.SetOutputSpacing(template_image.GetSpacing())
+	resample.SetSize(template_image.GetSize())
+	resample.SetOutputDirection(template_image.GetDirection())
+	resample.SetOutputOrigin(template_image.GetOrigin())
+
+	# Execute the resampling on the adjust image
+	resampled_adjust_image = resample.Execute(adjust_image)
+
+	return resampled_adjust_image
+
 
 def Joint_Resample_img(ref_img,imgs, new_z_spacing=5, interpolator=sitk.sitkBSpline):
 	#https://github.com/SimpleITK/SimpleITK/issues/561
@@ -214,7 +276,21 @@ def n4_bias_field_correction(img, number_of_iterations=None):
     corrector.SetMaximumNumberOfIterations(number_of_iterations)
 
     return corrector.Execute(img)
+def otsu_threshold(image, return_mask=False):
+	# Apply Otsu threshold
+	otsu_filter = sitk.OtsuThresholdImageFilter()
+	otsu_filter.SetInsideValue(0)
+	otsu_filter.SetOutsideValue(1)
+	otsu_threshold_mask = otsu_filter.Execute(image)
 
+	otsu_threshold_value = otsu_filter.GetThreshold()
+
+	if return_mask:
+		out = otsu_threshold_mask, otsu_threshold_value
+	else:
+		out = otsu_threshold_value
+
+	return out
 
 def ctp_exposure_weights(exposures):
     exposures = np.array(exposures)

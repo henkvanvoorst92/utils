@@ -5,14 +5,9 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="7b4c95a1-ba38-4862-a84c-2e792685175d" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/torch_utils.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/utils.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/utils.iml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/TOSHIBA.py" beforeDir="false" afterPath="$PROJECT_DIR$/TOSHIBA.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/ants_utils.py" beforeDir="false" afterPath="$PROJECT_DIR$/ants_utils.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/maskprocess.py" beforeDir="false" afterPath="$PROJECT_DIR$/maskprocess.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/nnunet.py" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/preprocess.py" beforeDir="false" afterPath="$PROJECT_DIR$/preprocess.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/registration.py" beforeDir="false" afterPath="$PROJECT_DIR$/registration.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/utils.py" beforeDir="false" afterPath="$PROJECT_DIR$/utils.py" afterDir="false" />
@@ -76,11 +71,25 @@
       <workItem from="1705397738277" duration="2124000" />
       <workItem from="1705763548957" duration="982000" />
       <workItem from="1707055777016" duration="12132000" />
-      <workItem from="1707230184640" duration="4172000" />
+      <workItem from="1707230184640" duration="10727000" />
+      <workItem from="1707467327779" duration="1199000" />
+      <workItem from="1708313861052" duration="113000" />
+      <workItem from="1708368405131" duration="2471000" />
+      <workItem from="1708469722018" duration="9138000" />
+      <workItem from="1708555647056" duration="624000" />
+      <workItem from="1708625157769" duration="11129000" />
+      <workItem from="1708707627716" duration="8922000" />
+      <workItem from="1708737443827" duration="6220000" />
+      <workItem from="1708966078449" duration="2155000" />
+      <workItem from="1709076366685" duration="2801000" />
+      <workItem from="1709234022234" duration="872000" />
     </task>
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
+  </component>
+  <component name="com.intellij.coverage.CoverageDataManagerImpl">
+    <SUITE FILE_PATH="coverage/utils$registration.coverage" NAME="registration Coverage Results" MODIFIED="1708914634350" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
   </component>
 </project>

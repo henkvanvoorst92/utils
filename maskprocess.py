@@ -1,6 +1,6 @@
 import numpy as np
 import itertools
-import math
+#import math
 import torch
 from numba import njit
 from torch import nn
@@ -10,9 +10,9 @@ from scipy.ndimage.filters import gaussian_filter
 
 def sitk_dilate_mask(mask,radius_mm, dilate_2D=False):
 	
-	radius_3d = [int(math.floor(radius_mm / mask.GetSpacing()[0])),
-			 int(math.floor(radius_mm / mask.GetSpacing()[1])),
-			 int(math.floor(radius_mm / mask.GetSpacing()[2]))]
+	radius_3d = [int(np.floor(radius_mm / mask.GetSpacing()[0])),
+			 int(np.floor(radius_mm / mask.GetSpacing()[1])),
+			 int(np.floor(radius_mm / mask.GetSpacing()[2]))]
 	if dilate_2D:
 		radius_3d[2] = 0
 	
@@ -68,12 +68,19 @@ def compute_volume(mask: sitk.SimpleITK.Image):
 	tot_volume = vol_per_vox*voxels/1000
 	return tot_volume
 
-def np_larges_cc(seg):
+def np_largest_cc(seg):
 	labels, nc = label(seg) # uses scipy.ndimage.measurements
 	unique, counts = np.unique(labels, return_counts=True) # unique connected components
 	unique, counts = unique[1:], counts[1:]
 	v = unique[np.argmax(counts)] # cc's larger than min_count
 	return (labels==v)*1
+
+def np_n_largest_cc(mask,n_top):
+    labels, nc = label(mask) # uses scipy.ndimage.measurements
+    unique, counts = np.unique(labels, return_counts=True) # unique connected components
+    unique, counts = unique[1:], counts[1:]
+    top_ixs = np.argpartition(counts, n_top*-1)[n_top*-1:]+1
+    return np.isin(labels,top_ixs)*1
 
 def sitk_select_components_minsize(mask: sitk.SimpleITK.Image, #sitk mask to extract connected components from
 									min_vol_ml=1):
@@ -196,9 +203,9 @@ def MultipleMorphology(mask,
 
 	rads_3d = []
 	for rad in mm_rads:
-		tmp = (int(math.floor(rad / mask.GetSpacing()[0])),
-			   int(math.floor(rad / mask.GetSpacing()[1])),
-			   int(math.floor(rad / mask.GetSpacing()[2])))
+		tmp = (int(np.floor(rad / mask.GetSpacing()[0])),
+			   int(np.floor(rad / mask.GetSpacing()[1])),
+			   int(np.floor(rad / mask.GetSpacing()[2])))
 		rads_3d.append(tmp)
 
 	for r, oper in zip(rads_3d, operations):
@@ -334,6 +341,25 @@ def boundary_mask(mask, dims=None, foregroundval=1):
 				break
 		dimdct[dim] = tmpdct
 	return dimdct
+
+def adjust_margin_boundary_mask_dct(dct,
+									margin=np.array([10, 10, 10]),
+									img=None):
+	# adds a certain margin to the boundary mask dct
+	# if img is an sitk.Image the values in margin are in mm
+	# otherwise the values in margin are pixels to add/subtract to boundaries
+	if isinstance(img, sitk.Image) and not img is None:
+		# retrieve spacing and adjust margin
+		sp1, sp2, sp0 = img.GetSpacing()
+		sp = np.array([sp0, sp1, sp2])
+		margin = np.ceil(margin / sp).astype(int)
+
+	for k in dct.keys():
+		if isinstance(k, int):
+			if k < 3:
+				dct[k] = {'lower': max(dct[k]['lower'] - margin[k], 0),
+						  'upper': dct[k]['upper'] + margin[k]}
+	return dct
 
 def batch_boundaries(batch):
 	"""

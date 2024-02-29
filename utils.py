@@ -236,21 +236,24 @@ def np2sitk(arr: np.ndarray, original_img: sitk.SimpleITK.Image):
 def initialize_logging(log_file_path):
 	# Configure the basic settings for global logging in one file (allways keeps runin in kernel)
 	logging.basicConfig(filename=log_file_path,
-						level=logging.DEBUG,  # Capture all levels of logging messages
+						level=logging.CRITICAL,  # Capture all levels of logging messages
 						format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
 						# Include timestamp, logger name, log level, and log message
 						datefmt='%Y-%m-%d %H:%M:%S')  # Format for the timestamp
 # print(f"Logging initialized. Log messages will be written to {log_file_path}")
-def initialize_logger_handler(log_file_path, remove_existing=False):
+def initialize_logger_handler(log_file_path,
+                              remove_existing=False,
+                              level=logging.DEBUG):
 	if remove_existing and os.path.exists(log_file_path):
 		os.remove(log_file_path)
 
 	# Configure the logger
 	logger = logging.getLogger(log_file_path)  # Get custom logger
+	logger.setLevel(level)
 
 	# Create a file handler that logs messages to the specified file
 	file_handler = logging.FileHandler(log_file_path)
-	file_handler.setLevel(logging.DEBUG)
+	file_handler.setLevel(level)
 
 	# Create a formatter and set it for the file handler
 	formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')

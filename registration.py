@@ -3,20 +3,91 @@ import SimpleITK as sitk
 import itk #should be version with itk-elastix
 import sys
 import argparse
+import os
+import ants
 from utils.preprocess import sitk2itk, itk2sitk
+from utils.ants_utils import sitk2ants, ants2sitk
+
+def register_cow_atlas(scan,
+                       atlas,
+                       cow,
+                       addname='',
+                       rp=None,
+                       pid=None):
+    """
+    Registers the atlas to the scan
+    then uses the transformation matrix
+    to register the cow mask to the scan
+
+    scan: an mra or cta scan
+    atlas: mra vessel atlas allligned with cow mask
+    cow: Circle of willis mask to select arteries
+    addname: name to add to the cow save file
+    rp: registration parameter settings
+
+    returns and/or saves the registered cow
+    """
+
+    if isinstance(scan, sitk.Image):
+        scan = sitk2ants(sitk.Cast(scan, sitk.sitkFloat32))
+
+    if isinstance(atlas, sitk.Image):
+        atlas = sitk2ants(sitk.Cast(sitk.Image(atlas), sitk.sitkFloat32))
+
+    if isinstance(cow, sitk.Image):
+        cow = sitk2ants(sitk.Cast(sitk.Image(cow), sitk.sitkFloat32))
+
+    if rp is None:
+        rp = {'type_of_transform': 'TRSAA',
+              'fix_bm': None,
+              'mv_bm': None,
+              'metric': 'mattes',
+              'mask_all_stages': False}
+
+    mytx = ants.registration(scan, atlas,
+                             type_of_transform=rp['type_of_transform'],
+                             mask=rp['fix_bm'],
+                             moving_mask=rp['mv_bm'],
+                             mask_all_stages=rp['mask_all_stages'],
+                             aff_metric=rp['metric'],
+                             syn_metric=rp['metric']
+                             )
+
+    # apply the transform to the cow
+    mv_cow = ants.apply_transforms(scan,
+                                   cow,
+                                   interpolator='nearestNeighbor',
+                                   transformlist=mytx['fwdtransforms'])
+
+    if pid is not None:
+        pid_reg = os.path.join(pid, 'registration')
+        if not os.path.exists(pid_reg):
+            os.makedirs(pid_reg)
+
+        ants.image_write(mv_cow, os.path.join(pid_reg, '{}cow_reg.nii.gz'.format(addname)))
+
+        ants.write_transform(ants.read_transform(mytx['fwdtransforms'][0]),
+                             os.path.join(pid_reg, '{}fwd.mat'.format(addname)))
+        ants.write_transform(ants.read_transform(mytx['invtransforms'][0]),
+                             os.path.join(pid_reg, '{}inv.mat'.format(addname)))
+
+    return ants2sitk(mv_cow)
+
 
 #registration with itk is 100x faster than simpleitk
-def itk_register(fixed_image, moving_image, param_file, fix_clip=None, moving_clip=None):
+#### Does not work at all!!!!!
+def itk_register(fixed_image, moving_image, param_file, fix_clip=None, moving_clip=None, return_sitk=True):
     # param file is path to a .txt registration parameters file
+    # this function only works for rigid and affine regs
     clip_reg = False
-    return_sitk = False #by default an itk image is returned
+
     # transform sitk images if required
     if isinstance(fixed_image, sitk.SimpleITK.Image):
         fixed_image = sitk2itk(fixed_image)
     if isinstance(moving_image, sitk.SimpleITK.Image):
         original_moving_image = sitk.Image(moving_image)
         moving_image = sitk2itk(moving_image)
-        return_sitk = True #if a conversion was performed an sitk image is return
+        return_sitk = True  # if a conversion was performed an sitk image is return
 
     # Cast images to float for registration algorithm
     fixed_image = itk.cast_image_filter(fixed_image, ttype=(type(fixed_image), itk.Image.F3))
@@ -52,6 +123,9 @@ def itk_register(fixed_image, moving_image, param_file, fix_clip=None, moving_cl
             fixed_image, moving_image,
             parameter_object=parameter_object,
             log_to_console=False)
+        result_image = itk.transformix_filter(
+            moving_image,
+            transform_parameters)
 
     if return_sitk:
         result_image = itk2sitk(result_image)
