@@ -23,6 +23,7 @@ def dcm2sitk(input):
 
 
 def dcm2niix(filename, input_dir, output_dir, dcm2niix=None, add_args=''):
+	#
     # if no path defined to dcm2niix executable
     if dcm2niix is None:
         dcm2niix = 'dcm2niix'

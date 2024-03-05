@@ -8,6 +8,91 @@ import ants
 from utils.preprocess import sitk2itk, itk2sitk
 from utils.ants_utils import sitk2ants, ants2sitk
 
+
+def ants_register(fixed,
+                  moving,
+                  addname='',
+                  rp=None,
+                  pid=None,
+                  clip_range=None):
+    """
+    Registers the atlas to the scan
+    then uses the transformation matrix
+    to register the cow mask to the scan
+
+    scan: an mra or cta scan
+    atlas: mra vessel atlas allligned with cow mask
+    cow: Circle of willis mask to select arteries
+    addname: name to add to the cow save file
+    rp: registration parameter settings
+
+    returns and/or saves the registered cow
+    """
+
+    clipped_register = False
+    if clip_range is not None:
+        if isinstance(fixed, sitk.Image) and isinstance(moving, sitk.Image):
+            fixed_reg = sitk.Image(sitk.Clamp(fixed, lowerBound=clip_range[0], upperBound=clip_range[1]))
+            fixed_reg = sitk2ants(sitk.Cast(fixed_reg, sitk.sitkFloat32))
+            moving_reg = sitk.Image(sitk.Clamp(moving, lowerBound=clip_range[0], upperBound=clip_range[1]))
+            moving_reg = sitk2ants(sitk.Cast(moving_reg, sitk.sitkFloat32))
+            clipped_register = True
+
+    if isinstance(fixed, sitk.Image):
+        fixed = sitk2ants(sitk.Cast(fixed, sitk.sitkFloat32))
+
+    if isinstance(moving, sitk.Image):
+        moving = sitk2ants(sitk.Cast(sitk.Image(moving), sitk.sitkFloat32))
+
+    if rp is None:
+        rp = {'type_of_transform': 'TRSAA',
+              'fix_bm': None,
+              'mv_bm': None,
+              'metric': 'mattes',
+              'mask_all_stages': False,
+              'default_value': 0}
+
+    if clipped_register:
+        mytx = ants.registration(fixed_reg, moving_reg,
+                                 type_of_transform=rp['type_of_transform'],
+                                 mask=rp['fix_bm'],
+                                 moving_mask=rp['mv_bm'],
+                                 mask_all_stages=rp['mask_all_stages'],
+                                 aff_metric=rp['metric'],
+                                 syn_metric=rp['metric']
+                                 )
+
+    else:
+        mytx = ants.registration(fixed, moving,
+                                 type_of_transform=rp['type_of_transform'],
+                                 mask=rp['fix_bm'],
+                                 moving_mask=rp['mv_bm'],
+                                 mask_all_stages=rp['mask_all_stages'],
+                                 aff_metric=rp['metric'],
+                                 syn_metric=rp['metric']
+                                 )
+
+    # apply the transform to the cow
+    moved = ants.apply_transforms(fixed, moving,
+                                  interpolator='bSpline',
+                                  transformlist=mytx['fwdtransforms'],
+                                  default_value=rp['default_value']
+                                  )
+
+    if pid is not None:
+        pid_reg = os.path.join(pid, 'registration')
+        if not os.path.exists(pid_reg):
+            os.makedirs(pid_reg)
+
+        ants.image_write(moved, os.path.join(pid, '{}moved.nii.gz'.format(addname)))
+
+        ants.write_transform(ants.read_transform(mytx['fwdtransforms'][0]),
+                             os.path.join(pid_reg, '{}fwd.mat'.format(addname)))
+        ants.write_transform(ants.read_transform(mytx['invtransforms'][0]),
+                             os.path.join(pid_reg, '{}inv.mat'.format(addname)))
+
+    return sitk.Cast(ants2sitk(moved), sitk.sitkInt16)
+
 def register_cow_atlas(scan,
                        atlas,
                        cow,

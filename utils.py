@@ -269,3 +269,26 @@ def stop_logging(logger, file_handler):
 	logger.removeHandler(file_handler)  # Remove the specified handler
 	file_handler.close()  # Close the handler to free up resources
 
+#
+# def any_in_list_has_str(lst, string, max_txt_length=None):
+# 	if max_txt_length is not None:
+# 		return np.any([string in txt for txt in lst if len(txt) < max_txt_length])
+# 	else:
+# 		return np.any([string in txt for txt in lst])
+#
+#
+# def string_in_list(lst, string, max_txt_length=None):
+# 	if max_txt_length is not None:
+# 		return [string in txt for txt in lst if len(txt) < max_txt_length]
+# 	else:
+# 		return [string in txt for txt in lst]
+#
+#
+# # do this
+# def multistring_in_list(lst, string, max_txt_length=None):
+# 	# string should be a list
+# 	if max_txt_length is not None:
+# 		return [np.any([st in txt for st in string]) for txt in lst if len(txt) < max_txt_length]
+# 	else:
+# 		return [np.any([st in txt for st in string]) for txt in lst]
+
