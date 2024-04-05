@@ -3,6 +3,9 @@ import os
 import SimpleITK as sitk
 import itk
 
+
+
+
 def dcm2sitk(input):
 	#http://insightsoftwareconsortium.github.io/SimpleITK-Notebooks/Python_html/03_Image_Details.html
 	# creates an image from input
@@ -20,7 +23,6 @@ def dcm2sitk(input):
 	reader.LoadPrivateTagsOn()
 	image = reader.Execute()
 	return image
-
 
 def dcm2niix(filename, input_dir, output_dir, dcm2niix=None, add_args=''):
 	#
@@ -298,6 +300,30 @@ def ctp_exposure_weights(exposures):
     tot = exposures.sum()
     weights = exposures / tot
     return weights
+
+def sitk_mirror(img, axis=0):
+    #uses dimensions of np array
+    #axis 0=z-dim --> vertical flip
+    img_arr = sitk.GetArrayFromImage(img)
+    # Concatenate the original and mirrored images to create a double-sized image
+    double_img = np.concatenate([img_arr, np.flipud(img_arr)], axis=axis)
+    double_img = np2sitk(double_img,img)#sitk.GetImageFromArray(double_img)
+    return double_img
+
+#can be use to crop mirrored image back to original format
+def crop_original_size(img_org, double_img):
+    org_size = np.array(img_org.GetSize())
+    double_size = np.array(double_img.GetSize())
+    for ix,(iseq,dimsize) in enumerate(zip(org_size==double_size,org_size)):
+        print(ix,iseq,dimsize)
+        if not iseq:
+            if ix==0:
+                out = double_img[:dimsize,:,:]
+            elif ix==1:
+                out = double_img[:,:dimsize,:]
+            elif ix==2:
+                out = double_img[:,:,:dimsize]
+    return out
 
 
 # t = mdata['AcquisitionDateTime']

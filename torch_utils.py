@@ -3,10 +3,10 @@ import os
 from torch import nn
 import torch
 from typing import List
-from utils import make_odd, is_odd
+from utils.utils import make_odd, is_odd
 import SimpleITK as sitk
 from scipy.ndimage.filters import gaussian_filter
-from preprocess import np2sitk, Resample_img
+from utils.preprocess import np2sitk, Resample_img
 
 def rtrn_np(img): # returns numpy array from torch tensor (on cuda)
 	return img.detach().cpu().numpy()

@@ -82,18 +82,25 @@ def np_n_largest_cc(mask,n_top):
     top_ixs = np.argpartition(counts, n_top*-1)[n_top*-1:]+1
     return np.isin(labels,top_ixs)*1
 
-def sitk_select_components_minsize(mask: sitk.SimpleITK.Image, #sitk mask to extract connected components from
-									min_vol_ml=1):
+
+def sitk_select_components_minsize(mask: sitk.SimpleITK.Image,  # sitk mask to extract connected components from
+								   min_vol_ml=1):
+	# minimum number of voxel in the array
+	min_count = np.ceil(min_vol_ml / np.product(np.array(mask.GetSpacing()))).astype(int)
+
+	# compute connected components and sort for faster processing
 	component_image = sitk.ConnectedComponent(mask)
 	SC = sitk.RelabelComponent(component_image, sortByObjectSize=True)
 	sc = sitk.GetArrayFromImage(SC)
 	ccs2use = []
 	for cc in np.unique(sc)[1:]:
-		vol = compute_volume(SC==cc)
-		ccs2use.append(cc)
-		if vol<min_vol_ml:
+		count = sitk.GetArrayFromImage(SC == cc).sum()
+		if count < min_count:
 			break
-	lcc = (SC>0) & (SC <= ccs2use[-1])
+		else:
+			ccs2use.append(cc)
+
+	lcc = (SC > 0) & (SC <= ccs2use[-1])
 	return lcc
 
 def remove_small_cc(seg,min_count=100):
@@ -105,7 +112,7 @@ def remove_small_cc(seg,min_count=100):
 	return out
 
 def get_min_voxcount(min_cc_vol,spacing):
-	vol_per_vox = np.product(np.array(spacing))
+	vol_per_vox = np.prod(np.array(spacing))
 	return [int(round(cc/vol_per_vox)) for cc in min_cc_vol]
 
 def get_largest_cc(mask):
@@ -421,7 +428,7 @@ def get_mask_coordinates(mask:np.ndarray,foreground=1, is3D=False):
 	return f_coordinates
 
 def np_volume(mask:np.ndarray,spacing):
-	vol_per_vox = np.product(np.array(spacing))
+	vol_per_vox = np.prod(np.array(spacing))
 	return vol_per_vox*mask.sum()
 
 def get_nonzero_slices(mask:np.ndarray):

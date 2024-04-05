@@ -14,6 +14,7 @@ def ants_register(fixed,
                   addname='',
                   rp=None,
                   pid=None,
+                  p_transform=None,
                   clip_range=None):
     """
     Registers the atlas to the scan
@@ -83,13 +84,12 @@ def ants_register(fixed,
         pid_reg = os.path.join(pid, 'registration')
         if not os.path.exists(pid_reg):
             os.makedirs(pid_reg)
-
         ants.image_write(moved, os.path.join(pid, '{}moved.nii.gz'.format(addname)))
-
+    if p_transform is not None:
         ants.write_transform(ants.read_transform(mytx['fwdtransforms'][0]),
-                             os.path.join(pid_reg, '{}fwd.mat'.format(addname)))
+                             os.path.join(p_transform , '{}fwd.mat'.format(addname)))
         ants.write_transform(ants.read_transform(mytx['invtransforms'][0]),
-                             os.path.join(pid_reg, '{}inv.mat'.format(addname)))
+                             os.path.join(p_transform, '{}inv.mat'.format(addname)))
 
     return sitk.Cast(ants2sitk(moved), sitk.sitkInt16)
 
@@ -340,8 +340,6 @@ def register_images_sitk(fixed_image, moving_image, args):
     moved_image = sitk.Cast(moved_image, sitk.sitkInt16)
 
     return moved_image, final_transform
-
-
 
 ### tryout to get it to work on cmdline
 # def itkelastix_default_arg_parser():
