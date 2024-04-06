@@ -10,6 +10,7 @@ import SimpleITK as sitk
 import shutil
 import argparse
 from tqdm import tqdm
+import ast
 from totalsegmentator.python_api import totalsegmentator
 
 from utils.utils import list_files, exists, is_ascending, is_notebook, compute_time_differences
@@ -380,7 +381,7 @@ def init_args(args=None):
     parser.add_argument('--root', type=str, default=None,
                         help='Main directory to store all the data.')
     parser.add_argument('--ctp_df', type=str, default=None,
-                        help='xslx file with several required columns, used for finding and parsing scans')
+                        help='xlsx file with several required columns, used for finding and parsing scans')
     """
     Required columns for ctp_df:
     'ID_new_dupl': cleaned ID ready to create folder names
@@ -431,7 +432,7 @@ if __name__=='__main__':
     """
     Required arguments to run this script:
     ctp_df: should contain rows with columns:
-        'ID_new_dupl': cleaned ID ready to create folder names
+        'ID_new_dupl' or 'ID': cleaned ID ready to create folder names
         'dir': directory with the ctp scan dicoms
         'AcquisitionDateTime': timestamp for each dicom representing a ctp frame volume
     root: main directory to store all the data
@@ -450,10 +451,13 @@ if __name__=='__main__':
 
     root = args.root
     ctp_df = pd.read_excel(args.ctp_df)
+    if 'ID_new_dupl' in ctp_df:
+        ctp_df['ID'] = ctp_df['ID_new_dupl']
+
     p_sav = os.path.join(root, 'processed_data')
 
-    time_averages = args.time_averages
-    mask_roi_subset = args.mask_roi_subset
+    time_averages = ast.literal_eval(args.time_averages)
+    mask_roi_subset = ast.literal_eval(args.mask_roi_subset)
     margin = args.margin
     all_ctas = args.all_ctas
     register = args.register
@@ -478,7 +482,7 @@ if __name__=='__main__':
         rp = registration_params.copy()
         ctp, mdata, ctp_reg = None, None, None
 
-        ID = row['ID_new_dupl']
+        ID = row['ID']
         pid = os.path.join(p_sav, ID)
 
         pid_nii = os.path.join(pid, 'NII')
