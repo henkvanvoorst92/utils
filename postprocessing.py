@@ -5,6 +5,7 @@ import torch
 from numba import njit, prange
 from torch import nn
 import SimpleITK as sitk
+sys.path.append('..')
 from utils.maskprocess import boundary_mask
 
 @njit(parallel=True,fastmath=True, nogil=True)

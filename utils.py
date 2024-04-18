@@ -459,4 +459,14 @@ def is_notebook():
         return False      # Probably standard Python interpreter
 
 
+def int_convert_list_args(args_list):
+    # Try to convert to integer, fallback to string if it fails
+    out = []
+    for item in args_list:
+        try:
+            processed_item = int(item)
+        except ValueError:
+            processed_item = item
+        out.append(processed_item)
 
+    return out

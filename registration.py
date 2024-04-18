@@ -5,6 +5,7 @@ import sys
 import argparse
 import os
 import ants
+sys.path.append('..')
 from utils.preprocess import sitk2itk, itk2sitk
 from utils.ants_utils import sitk2ants, ants2sitk
 
@@ -93,9 +94,9 @@ def ants_register(fixed,
 
     return sitk.Cast(ants2sitk(moved), sitk.sitkInt16)
 
-def register_cow_atlas(scan,
+def register_roi_atlas(scan,
                        atlas,
-                       cow,
+                       roi,
                        addname='',
                        rp=None,
                        pid=None):
@@ -106,7 +107,7 @@ def register_cow_atlas(scan,
 
     scan: an mra or cta scan
     atlas: mra vessel atlas allligned with cow mask
-    cow: Circle of willis mask to select arteries
+    roi: Circle of willis or roi mask to select arteries
     addname: name to add to the cow save file
     rp: registration parameter settings
 
@@ -119,8 +120,8 @@ def register_cow_atlas(scan,
     if isinstance(atlas, sitk.Image):
         atlas = sitk2ants(sitk.Cast(sitk.Image(atlas), sitk.sitkFloat32))
 
-    if isinstance(cow, sitk.Image):
-        cow = sitk2ants(sitk.Cast(sitk.Image(cow), sitk.sitkFloat32))
+    if isinstance(roi, sitk.Image):
+        roi = sitk2ants(sitk.Cast(sitk.Image(roi), sitk.sitkFloat32))
 
     if rp is None:
         rp = {'type_of_transform': 'TRSAA',
@@ -139,8 +140,8 @@ def register_cow_atlas(scan,
                              )
 
     # apply the transform to the cow
-    mv_cow = ants.apply_transforms(scan,
-                                   cow,
+    mv_roi = ants.apply_transforms(scan,
+                                   roi,
                                    interpolator='nearestNeighbor',
                                    transformlist=mytx['fwdtransforms'])
 
@@ -149,14 +150,14 @@ def register_cow_atlas(scan,
         if not os.path.exists(pid_reg):
             os.makedirs(pid_reg)
 
-        ants.image_write(mv_cow, os.path.join(pid_reg, '{}cow_reg.nii.gz'.format(addname)))
+        ants.image_write(mv_roi, os.path.join(pid_reg, '{}_reg.nii.gz'.format(addname)))
 
         ants.write_transform(ants.read_transform(mytx['fwdtransforms'][0]),
                              os.path.join(pid_reg, '{}fwd.mat'.format(addname)))
         ants.write_transform(ants.read_transform(mytx['invtransforms'][0]),
                              os.path.join(pid_reg, '{}inv.mat'.format(addname)))
 
-    return ants2sitk(mv_cow)
+    return ants2sitk(mv_roi)
 
 
 #registration with itk is 100x faster than simpleitk

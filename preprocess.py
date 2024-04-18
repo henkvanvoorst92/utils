@@ -2,9 +2,8 @@ import numpy as np
 import os
 import SimpleITK as sitk
 import itk
-
-
-
+import shutil
+from tqdm import tqdm
 
 def dcm2sitk(input):
 	#http://insightsoftwareconsortium.github.io/SimpleITK-Notebooks/Python_html/03_Image_Details.html
@@ -324,6 +323,98 @@ def crop_original_size(img_org, double_img):
             elif ix==2:
                 out = double_img[:,:,:dimsize]
     return out
+
+
+def copy_seg_to_original_folder(nnunet_seg_folder, original_folder, addname='-CTA_vesselseg'):
+    # copy nnunet segmentations back to original folder
+    for f in os.listdir(nnunet_seg_folder):
+        ID = f.split(".")[0]
+        if '_0000' in ID:
+            ID = ID.split('_0000')[0]
+        pid = os.path.join(original_folder, ID)
+        if not os.path.exists(pid):
+            os.makedirs(pid)
+
+        f_nnunet = os.path.join(nnunet_seg_folder, f)
+
+        if '.nii.gz' in f:
+            f_original = os.path.join(pid, '{}{}.nii.gz'.format(ID, addname))
+        elif '.pkl' in f:
+            f_original = os.path.join(pid, '{}{}.pkl'.format(ID, addname))
+        elif '.npz' in f:
+            f_original = os.path.join(pid, '{}{}.npz'.format(ID, addname))
+
+        shutil.copy2(f_nnunet, f_original)
+    return
+
+def hdbet(input_folder, output_folder, overwrite=False):
+    #-s: 1 if you want to save the brainmask
+    #-b: 1 if you want to save the processed mri
+    #-device: number is gpu number otherwise cpu (=slow)
+    #-mode: accurate or fast
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+    cmd = 'hd-bet -i {} -o {} -s 1 -b 0 -device 0 -mode accurate --overwrite_existing {}'.format(input_folder, output_folder, 1 if overwrite else 0)
+    print(cmd)
+    os.system(cmd)
+
+
+def hdbet_brain_segment_all(folder_in,
+							file_ending='-MRA_n4bfc',
+							new_mask_name='-MRA_bm',
+							remove_existing_files=False):
+	"""
+    function to directly segment the brain hd-bet in a preprocessing loop
+    Creates directory to segment the brain using hd-bet
+    and copies the brainmask back to original folder
+    """
+
+	p = os.path.join(*[os.sep, *folder_in.split(os.sep)[:-1]])
+
+	tmp_imgs = os.path.join(p, 'imgs')
+	tmp_bm = os.path.join(p, 'brainmasks')
+	os.makedirs(tmp_imgs, exist_ok=True)
+	os.makedirs(tmp_bm, exist_ok=True)
+
+	# identify IDs with brainmask
+	bm_IDs = [f.split('-')[0] for f in os.listdir(tmp_bm)]
+	if remove_existing_files and len(os.listdir(tmp_imgs)) > 0:
+		print('Removing images with existing brainmask:', tmp_imgs)
+		for f in os.listdir(tmp_imgs):
+			ID = f.split('-')[0]
+			if ID in bm_IDs:
+				f_rm = os.path.join(tmp_imgs, f)
+				os.remove(f_rm)
+
+	print('Moving images to new folder:', tmp_imgs)
+	for f in tqdm(os.listdir(folder_in)):
+		ID = f.split('-')[0]
+		if ID in bm_IDs:
+			continue
+		pid = os.path.join(folder_in, ID)
+		file = f'{ID}{file_ending}'
+		p_org = os.path.join(pid, file + '.nii.gz')
+		p_to = os.path.join(tmp_imgs, ID + '_0000.nii.gz')
+		if not os.path.exists(p_org):
+			continue
+		shutil.copy2(p_org, p_to)
+
+	print('Running hd-bet on images, generating brainmasks:', tmp_bm)
+	hdbet(tmp_imgs, tmp_bm)
+
+	# removing temporary image processing folder
+	shutil.rmtree(tmp_imgs)
+
+	# move generated brainmasks back to original folder
+	print('Copying brainmask to original folders')
+	copy_seg_to_original_folder(nnunet_seg_folder=tmp_bm,
+								original_folder=folder_in,
+								addname=new_mask_name)
+
+	# remove temporary brainmask folder
+	shutil.rmtree(tmp_bm)
+
+
 
 
 # t = mdata['AcquisitionDateTime']

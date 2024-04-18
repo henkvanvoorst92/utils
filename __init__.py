@@ -1,6 +1,8 @@
+#init file for utils
 
-# This __init__.py can be empty or contain package-level initializations
-#__path__ = __import__('pkgutil').extend_path(__path__, __name__)
+__path__ = __import__('pkgutil').extend_path(__path__, __name__)
 # print(__path__)
 # import sys
-# sys.path.append(__path__)
+import os
+import sys
+sys.path.append(os.path.dirname(os.path.realpath(__file__)))

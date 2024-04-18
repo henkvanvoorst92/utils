@@ -505,3 +505,5 @@ def tolerance_adj(img,digits=4):
 	img.SetDirection(direction)
 	img.SetOrigin(origin)
 	return img
+def mask2coordinates(mask):
+	return np.vstack(np.where(mask)).T
