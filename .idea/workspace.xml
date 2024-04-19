@@ -6,14 +6,6 @@
   <component name="ChangeListManager">
     <list default="true" id="7b4c95a1-ba38-4862-a84c-2e792685175d" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/TOSHIBA.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/maskprocess.py" beforeDir="false" afterPath="$PROJECT_DIR$/maskprocess.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/postprocessing.py" beforeDir="false" afterPath="$PROJECT_DIR$/postprocessing.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/preprocess.py" beforeDir="false" afterPath="$PROJECT_DIR$/preprocess.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/registration.py" beforeDir="false" afterPath="$PROJECT_DIR$/registration.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/torch_utils.py" beforeDir="false" afterPath="$PROJECT_DIR$/torch_utils.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/utils.py" beforeDir="false" afterPath="$PROJECT_DIR$/utils.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
