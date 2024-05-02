@@ -1,12 +1,15 @@
 import numpy as np
 import itertools
-#import math
+import sys
 import torch
-from numba import njit
+from scipy.ndimage import binary_dilation
 from torch import nn
 import SimpleITK as sitk
 from scipy.ndimage.measurements import label
 from scipy.ndimage.filters import gaussian_filter
+sys.path.append('..')
+from utils.distances import get_3Dmask_coordinates, nearest_neighbor_distances, coordinates2mask_3D
+
 
 def sitk_dilate_mask(mask,radius_mm, dilate_2D=False):
 	
@@ -24,7 +27,7 @@ def sitk_dilate_mask(mask,radius_mm, dilate_2D=False):
 
 def sitk_dilate_mm(mask,kernel_mm, background=0, foreground=1):
 	
-	if isinstance(kernel_mm,int):
+	if isinstance(kernel_mm,int) or isinstance(kernel_mm,float):
 		k0 = k1 = k2 = kernel_mm
 	elif isinstance(kernel_mm,tuple) or isinstance(kernel_mm,list):
 		k0, k1, k2 = kernel_mm
@@ -41,7 +44,7 @@ def sitk_dilate_mm(mask,kernel_mm, background=0, foreground=1):
 
 def sitk_erode_mm(mask,kernel_mm, background=0, foreground=1):
 	
-	if isinstance(kernel_mm,int):
+	if isinstance(kernel_mm,int) or isinstance(kernel_mm,float):
 		k0 = k1 = k2 = kernel_mm
 	elif isinstance(kernel_mm,tuple) or isinstance(kernel_mm,list):
 		k0, k1, k2 = kernel_mm
@@ -408,24 +411,6 @@ def staple(segmentations, foregroundValue = 1, threshold = 0.5):
 	#STAPLE = sitk.GetArrayViewFromImage(STAPLE)
 	return sitk.GetArrayFromImage(STAPLE)
 
-@njit(parallel=True,fastmath=True)
-def get_mask_coordinates(mask:np.ndarray,foreground=1, is3D=False):
-	"""
-	returns a list of coordinates from a mask 
-	with foreground pixels
-	"""
-	
-	f_coordinates = []
-	for i in range(mask.shape[0]):
-		for j in range(mask.shape[1]):
-			if not is3D:
-				if mask[i,j]==foreground:
-					f_coordinates.append([i,j])
-			else:
-				for k in range(mask.shape[2]):
-					if mask[i,j,k]==foreground:
-						f_coordinates.append([i,j,k])
-	return f_coordinates
 
 def np_volume(mask:np.ndarray,spacing):
 	vol_per_vox = np.prod(np.array(spacing))
@@ -470,9 +455,6 @@ def torch_init_gauss_conv3d(kernel_size,crop_bound=0,device='cpu',ttype=torch.fl
 		param.requires_grad = False
 	return conv,kernel
 
-
-
-
 def lesion_count_volstat(seg,spacing=None,min_size=1):
 	#counts the number of separate lesions in segmentation (seg)
 	#and computs avg and median volume per lesion
@@ -507,3 +489,30 @@ def tolerance_adj(img,digits=4):
 	return img
 def mask2coordinates(mask):
 	return np.vstack(np.where(mask)).T
+
+
+def distance_to_skull_map(mask: np.ndarray,
+						  brainmask: np.ndarray,
+						  spacing: np.ndarray or tuple or list = None):
+	"""
+    Computes the distance of all voxels in mask to the skull
+    mask : can be vessel segmentation or again the brainmask
+            --> used to compute distance --> smaller foreground = faster compute
+    brainmask : edge of the brainmask is used to represent the skull
+    """
+
+	mask_coords = get_3Dmask_coordinates(mask)
+
+	edge = binary_dilation(brainmask, structure=np.ones((3, 3, 3)), iterations=1) - brainmask
+	edge_coords = get_3Dmask_coordinates(edge)
+
+	dists_per_coord = nearest_neighbor_distances(
+		np.array(mask_coords).astype(np.int16),
+		np.array(edge_coords).astype(np.int16),
+		spacing=spacing
+	)
+	distance_map = coordinates2mask_3D(np.array(mask_coords),
+									   np.zeros_like(mask),
+									   dists_per_coord)
+
+	return distance_map
