@@ -470,3 +470,31 @@ def int_convert_list_args(args_list):
         out.append(processed_item)
 
     return out
+
+def load_json(file: str):
+    with open(file, 'r') as f:
+        a = json.load(f)
+    return a
+
+
+def save_json(obj, file: str, indent: int = 4, sort_keys: bool = True) -> None:
+    with open(file, 'w') as f:
+        json.dump(obj, f, sort_keys=sort_keys, indent=indent)
+
+
+def write_list2txt(path: str, data_list: list):
+    with open(path, 'w') as file:
+        # Write each item on a new line
+        for item in data_list:
+            file.write(str(item) + '\n')
+
+
+def read_list_from_txt(path):
+    retrieved_list = []
+    # Open the text file for reading
+    with open(path, 'r') as file:
+        # Read each line from the file
+        for line in file:
+            # Strip the newline character and add to the list
+            retrieved_list.append(ast.literal_eval(line.strip()))
+    return retrieved_list

@@ -1,7 +1,12 @@
 import numpy as np
-from numba import njit
+import sys
+#from numba import njit
 from sklearn import metrics
-from utils.utils import rtrn_np
+sys.path.append('..')
+
+
+def rtrn_np(img): # returns numpy array from torch tensor (on cuda)
+	return img.detach().cpu().numpy()
 
 def np_dice(y_true,y_pred,add=1e-6):
 	return (2*(y_true*y_pred).sum()+add)/(y_true.sum()+y_pred.sum()+add)
@@ -26,7 +31,7 @@ def Get_dice(gt, dmap, thresholds, masks=None, largerthan=True):
 		out.append(row)
 	return out
 
-@njit(parallel=True,fastmath=True)
+#@njit(parallel=True,fastmath=True)
 def Fast_dice(gt,dmap,thresholds, masks=None, largerthan=True):
 	if masks is None:
 		masks = []
