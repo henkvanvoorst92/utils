@@ -52,7 +52,9 @@ def ants_register(fixed,
               'mv_bm': None,
               'metric': 'mattes',
               'mask_all_stages': False,
-              'default_value': 0}
+              'default_value': 0,
+              'interpolator': 'linear' #or 'nearestNeighbor''bSpline'
+              }
 
     if clipped_register:
         mytx = ants.registration(fixed_reg, moving_reg,
@@ -76,7 +78,7 @@ def ants_register(fixed,
 
     # apply the transform to the cow
     moved = ants.apply_transforms(fixed, moving,
-                                  interpolator='bSpline',
+                                  interpolator=rp['interpolator'],
                                   transformlist=mytx['fwdtransforms'],
                                   default_value=rp['default_value']
                                   )
