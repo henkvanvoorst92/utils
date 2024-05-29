@@ -23,7 +23,7 @@ setup(
         "scipy==1",
         "pydicom",
         "seaborn==0.11",
-        "pandas==2.1",
+        "pandas==2",
         "openpyxl",
         "tqdm",
         "antspyx",
