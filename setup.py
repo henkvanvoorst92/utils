@@ -20,14 +20,15 @@ setup(
         "torchaudio==2.1.0",
         "pytorch-cuda==11.8",
         "simpleitk",
-        "scikit-learn==0.24.2",
-        "scipy=1.7.3",
+        "scikit-learn==1.3",
+        "scipy==1.11",
         "pydicom"
         "seaborn==0.11",
-        "pandas==1.5",
+        "pandas==2.1",
         "openpyxl",
         "tqdm",
-        "antspyx"
+        "antspyx",
+        "totalsegmentator==2.0.5"
     ],
     classifiers=[
         'Programming Language :: Python :: 3',
