@@ -20,7 +20,7 @@ setup(
         "torchaudio >= 2.1.0",
         "simpleitk",
         "scikit-learn>=1",
-        "numpy>=1.24"
+        "numpy>=1.24",
         "scipy>=1.10",
         "aiohttp>=3.8.4",
         "pydicom",
