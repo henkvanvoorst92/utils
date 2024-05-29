@@ -21,13 +21,13 @@ setup(
         "simpleitk",
         "scikit-learn==1.3",
         "scipy==1.11",
-        "pydicom"
+        "pydicom",
         "seaborn==0.11",
         "pandas==2.1",
         "openpyxl",
         "tqdm",
         "antspyx",
-        "totalsegmentator==2.0.5"
+        "totalsegmentator>=2.0.5"
     ],
     classifiers=[
         'Programming Language :: Python :: 3',
