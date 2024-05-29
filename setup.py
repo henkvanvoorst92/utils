@@ -20,7 +20,7 @@ setup(
         "torchaudio >= 2.1.0",
         "simpleitk",
         "scikit-learn==1.3",
-        "scipy==1.11",
+        "scipy==1",
         "pydicom",
         "seaborn==0.11",
         "pandas==2.1",
