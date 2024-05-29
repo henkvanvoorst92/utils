@@ -15,10 +15,9 @@ setup(
                 'preprocessing', 'registration', 'torch_utils',
                 'utils', 'visualize'],
     install_requires=[
-        "pytorch>=2.1.0",
-        "torchvision>=0.16.0",
-        "torchaudio>=2.1.0",
-        "pytorch-cuda>=11.8",
+        "torch >= 2.1.0",
+        "torchvision >= 0.16.0",
+        "torchaudio >= 2.1.0",
         "simpleitk",
         "scikit-learn==1.3",
         "scipy==1.11",
