@@ -3,6 +3,7 @@ import numpy as np
 import torch
 from numba import njit
 from sklearn.neighbors import NearestNeighbors
+from scipy.spatial import cKDTree
 from tqdm import tqdm
 
 @njit(fastmath=True)
@@ -240,4 +241,35 @@ def nearest_neighbor_distances(coords1, coords2, spacing=None):
 	# Find the nearest point in scaled coords2 for each point in scaled coords1
 	distances, indices = nn.kneighbors(coords1_scaled)
 
-	return distances.flatten()
+	return distances.flatten() #, indices.flatten()
+
+def cKDTree_vessel_subsegments(cl_mask: np.ndarray,
+							   seg: np.ndarray,
+							   spacing=None):
+	"""
+    cl_mask :: mask with different values per centerline segment
+    seg     :: segmentation of vessels represented by the centerline
+    spacing :: spacing int/float or list/np.ndarray/tuple in xyz
+    """
+	if spacing is None:
+		spacing = np.repeat(1, len(cl_mask.shape))
+	elif isinstance(spacing, int) or isinstance(spacing, float):
+		spacing = np.repeat(spacing, len(cl_mask.shape))
+	elif isinstance(spacing, list) or isinstance(spacing, np.ndarray) or isinstance(spacing, tuple):
+		spacing = np.array(spacing[::1])
+
+	cl_coords = np.argwhere(cl_mask > 0)
+	cl_coords_scaled = cl_coords * spacing
+	cl_values = cl_mask[cl_mask > 0]
+
+	seg_coords = np.argwhere(seg > 0)
+	seg_coords_scaled = seg_coords * spacing
+
+	tree = cKDTree(cl_coords_scaled)
+
+	distances, indices = tree.query(seg_coords_scaled, k=1)
+	mask_out = np.zeros_like(seg)
+	# Assign the values from the centerline to the nearest vessel voxels
+	mask_out[tuple(seg_coords.T)] = cl_values[indices]
+	return mask_out
+
