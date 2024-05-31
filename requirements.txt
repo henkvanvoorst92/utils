@@ -1,7 +1,7 @@
+torch==2.1.0
+torchvision==0.16.0
+torchaudio==2.1.0
 -f https://download.pytorch.org/whl/cu118
-torch==2.2.1
-torchvision==0.17.1
-torchaudio==2.2.1
 simpleitk
 scikit-learn>=1
 scipy>=1.5
@@ -12,3 +12,4 @@ openpyxl
 tqdm
 antspyx
 totalsegmentator
+
