@@ -1,6 +1,7 @@
 import numpy as np
 import itertools
 import sys
+import os
 import torch
 from scipy.ndimage import binary_dilation
 from torch import nn
@@ -9,7 +10,7 @@ from scipy.ndimage.measurements import label
 from scipy.ndimage.filters import gaussian_filter
 sys.path.append('..')
 from utils.distances import get_3Dmask_coordinates, nearest_neighbor_distances, coordinates2mask_3D
-
+from utils.utils import np2sitk
 
 def sitk_dilate_mask(mask,radius_mm, dilate_2D=False):
 	
@@ -516,3 +517,106 @@ def distance_to_skull_map(mask: np.ndarray,
 									   dists_per_coord)
 
 	return distance_map
+
+def nrrd_segment_numbers(nrrd_image):
+    out = []
+    for k in nrrd_image.GetMetaDataKeys():
+        k = (k.split('_')[0]).replace('Segment','')
+        try:
+            out.append(int(k))
+        except:
+            continue
+    return list(set(out))
+
+def nrrd_label_dict(seg_nrrd_file,only_renamed_segments=True):
+    nrrd_image = sitk.ReadImage(seg_nrrd_file)
+
+    # Get all metadata keys
+    metadata_keys = nrrd_image.GetMetaDataKeys()
+
+    segnos = nrrd_segment_numbers(nrrd_image)
+    # Initialize a dictionary to hold segment names and label values
+    segment_dict = {}
+    for segment_index in segnos:
+        segment_name = nrrd_image.GetMetaData(f'Segment{segment_index}_Name')
+        #do not considered non-renamed segments
+        if only_renamed_segments:
+            if 'Segment' in segment_name:
+                continue
+        segment_label_value = int(nrrd_image.GetMetaData(f'Segment{segment_index}_LabelValue'))
+        segment_dict[segment_name] = segment_label_value
+    return segment_dict
+
+
+def multimask2singlemask(mask, value, p_sav=None):
+	"""
+    Selects a subclass (value) of the a mask with multiple values (mask)
+    saves or returns it
+    """
+	if isinstance(mask, str):
+		file = os.path.basename(mask)
+		if p_sav is not None:
+			os.makedirs(p_sav, exist_ok=True)
+			p_sav = os.path.join(p_sav, file)
+		mask = sitk.ReadImage(mask)
+	mask = sitk.Cast((mask == value) * 1, sitk.sitkInt16)
+
+	sitk.WriteImage(mask, p_sav)
+	return mask
+
+
+def lesion_in_roimask_value(roimask, lesion):
+	"""
+    Given a lesion and roimask, identifies the roimask subclass
+    with the largest portion of the lesion
+    returns value of the roimask to select
+    """
+	if isinstance(roimask, sitk.Image):
+		roimask = sitk.GetArrayFromImage(roimask)
+	if isinstance(lesion, sitk.Image):
+		lesion = sitk.GetArrayFromImage(lesion)
+
+	vals, counts = np.unique(roimask * lesion, return_counts=True)
+
+	maxcount, roi_val_select = 0, np.NaN
+	for v in vals:
+		if v != 0:
+			vcount = counts[vals == v]
+			if vcount > maxcount:
+				maxcount = vcount
+				roi_val_select = v
+	if np.isnan(roi_val_select):
+		print('Error no roi select found')
+	return roi_val_select
+
+
+def select_lesion_in_roimask(roimask, lesion):
+	"""
+    Separates lesion in connected components
+    returns a new mask of lesion components that are
+    """
+	if isinstance(roimask, sitk.Image):
+		roimask = sitk.GetArrayFromImage(roimask)
+	if isinstance(lesion, sitk.Image):
+		lesion = sitk.GetArrayFromImage(lesion)
+
+	labels, nc = label(lesion)
+	labels_in_roimask = np.unique(labels * roimask)
+	return np.isin(labels, labels_in_roimask) * 1
+
+def lesion_in_infarcted_hemisphere(hemispheres,
+                                   identification_mask,
+                                   lesion, dil_mm=5):
+	"""
+    hemispheres is an sitk.Image mask representing left and right hemispheres
+    identification_mask is an sitk.Image mask for selecting the right hemisphere
+    lesion is an sitk.Image mask with separate distinct connected components of the lesion
+    returns only separate parts of the lesion in the infarcted hemisphere
+    """
+	# select the infarcted half of the brain
+	select_roival = lesion_in_roimask_value(hemispheres, identification_mask)
+	infarcted_hemisphere = sitk_dilate_mm((hemispheres == select_roival) * 1, dil_mm)
+	# select lesions with part in the infarcted hemisphere
+	lesion_in_hemishpere = select_lesion_in_roimask(infarcted_hemisphere, lesion)
+	lesion_in_hemishpere = sitk.Cast(np2sitk(lesion_in_hemishpere, hemispheres), sitk.sitkInt16)
+	return lesion_in_hemishpere

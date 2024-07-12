@@ -47,6 +47,7 @@ def ants_register(fixed,
         moving = sitk2ants(sitk.Cast(sitk.Image(moving), sitk.sitkFloat32))
 
     if rp is None:
+        print('Using default rp')
         rp = {'type_of_transform': 'TRSAA',
               'fix_bm': None,
               'mv_bm': None,
@@ -55,6 +56,8 @@ def ants_register(fixed,
               'default_value': 0,
               'interpolator': 'linear' #or 'nearestNeighbor''bSpline'
               }
+        print(rp)
+        print('Using default estimator')
 
     if clipped_register:
         mytx = ants.registration(fixed_reg, moving_reg,
@@ -96,6 +99,86 @@ def ants_register(fixed,
 
     return sitk.Cast(ants2sitk(moved), sitk.sitkInt16)
 
+def ants_register_roi_atlas(fixed,
+                            moving,  # the atlas image
+                            roi,  # the roi mask in the atlas
+                            addname='',
+                            rp=None,
+                            pid=None,
+                            p_transform=None,
+                            clip_range=None):
+    """
+    Registers the atlas (moving) to the scan (fixed)
+    then uses the transformation matrix
+    to register the cow mask to the scan
+
+    scan: an mra or cta scan
+    atlas: mra vessel atlas allligned with cow mask
+    cow: Circle of willis mask to select arteries
+    addname: name to add to the cow save file
+    rp: registration parameter settings
+
+    returns and/or saves the registered cow
+    """
+
+    if clip_range is not None:
+        if isinstance(fixed, sitk.Image) and isinstance(moving, sitk.Image):
+            fixed = sitk.Image(sitk.Clamp(sitk.Image(fixed),
+                                          lowerBound=clip_range[0], upperBound=clip_range[1]))
+            moving = sitk.Image(sitk.Clamp(sitk.Image(moving),
+                                           lowerBound=clip_range[0], upperBound=clip_range[1]))
+
+    if isinstance(fixed, sitk.Image):
+        fixed = sitk2ants(sitk.Cast(sitk.Image(fixed), sitk.sitkFloat32))
+
+    if isinstance(moving, sitk.Image):
+        moving = sitk2ants(sitk.Cast(sitk.Image(moving), sitk.sitkFloat32))
+
+    if isinstance(roi, sitk.Image):
+        roi = sitk2ants(sitk.Cast(sitk.Image(roi), sitk.sitkFloat32))
+
+    if rp is None:
+        print('Using default rp')
+        rp = {'type_of_transform': 'TRSAA',
+              'fix_bm': None,
+              'mv_bm': None,
+              'metric': 'mattes',
+              'mask_all_stages': False,
+              'default_value': 0,
+              'interpolator': 'linear'  # or 'nearestNeighbor''bSpline'
+              }
+        print(rp)
+        print('Using default estimator')
+
+    mytx = ants.registration(fixed, moving,
+                             type_of_transform=rp['type_of_transform'],
+                             mask=rp['fix_bm'],
+                             moving_mask=rp['mv_bm'],
+                             mask_all_stages=rp['mask_all_stages'],
+                             aff_metric=rp['metric'],
+                             syn_metric=rp['metric']
+                             )
+
+    # apply the transform to the cow
+    mv_roi = ants.apply_transforms(fixed,
+                                   roi,
+                                   interpolator='nearestNeighbor',
+                                   transformlist=mytx['fwdtransforms'])
+
+    if pid is not None:
+        pid_reg = os.path.join(pid, 'registration')
+        if not os.path.exists(pid_reg):
+            os.makedirs(pid_reg)
+
+        ants.image_write(mv_roi, os.path.join(pid_reg, '{}_reg.nii.gz'.format(addname)))
+
+        ants.write_transform(ants.read_transform(mytx['fwdtransforms'][0]),
+                             os.path.join(pid_reg, '{}fwd.mat'.format(addname)))
+        ants.write_transform(ants.read_transform(mytx['invtransforms'][0]),
+                             os.path.join(pid_reg, '{}inv.mat'.format(addname)))
+
+    return sitk.Cast(ants2sitk(mv_roi), sitk.sitkInt16)
+
 def register_roi_atlas(scan,
                        atlas,
                        roi,
@@ -124,13 +207,6 @@ def register_roi_atlas(scan,
 
     if isinstance(roi, sitk.Image):
         roi = sitk2ants(sitk.Cast(sitk.Image(roi), sitk.sitkFloat32))
-
-    if rp is None:
-        rp = {'type_of_transform': 'TRSAA',
-              'fix_bm': None,
-              'mv_bm': None,
-              'metric': 'mattes',
-              'mask_all_stages': False}
 
     mytx = ants.registration(scan, atlas,
                              type_of_transform=rp['type_of_transform'],
