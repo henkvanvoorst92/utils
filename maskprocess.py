@@ -564,32 +564,6 @@ def multimask2singlemask(mask, value, p_sav=None):
 	sitk.WriteImage(mask, p_sav)
 	return mask
 
-
-def lesion_in_roimask_value(roimask, lesion):
-	"""
-    Given a lesion and roimask, identifies the roimask subclass
-    with the largest portion of the lesion
-    returns value of the roimask to select
-    """
-	if isinstance(roimask, sitk.Image):
-		roimask = sitk.GetArrayFromImage(roimask)
-	if isinstance(lesion, sitk.Image):
-		lesion = sitk.GetArrayFromImage(lesion)
-
-	vals, counts = np.unique(roimask * lesion, return_counts=True)
-
-	maxcount, roi_val_select = 0, np.NaN
-	for v in vals:
-		if v != 0:
-			vcount = counts[vals == v]
-			if vcount > maxcount:
-				maxcount = vcount
-				roi_val_select = v
-	if np.isnan(roi_val_select):
-		print('Error no roi select found')
-	return roi_val_select
-
-
 def select_lesion_in_roimask(roimask, lesion):
 	"""
     Separates lesion in connected components
@@ -604,19 +578,46 @@ def select_lesion_in_roimask(roimask, lesion):
 	labels_in_roimask = np.unique(labels * roimask)
 	return np.isin(labels, labels_in_roimask) * 1
 
+def lesion_in_roimask_value(roimask, lesion):
+    """
+    Given a lesion and roimask, identifies the roimask subclass
+    with the largest portion of the lesion
+    returns values/counts dict for each separate connected component ordered by count
+    """
+    if isinstance(roimask, sitk.Image):
+        roimask = sitk.GetArrayFromImage(roimask)
+    if isinstance(lesion, sitk.Image):
+        lesion = sitk.GetArrayFromImage(lesion)
+
+    vals, counts = np.unique(roimask * lesion, return_counts=True)
+    ixs = np.argsort(counts)[::-1]
+    vc_dct = {vals[ix]:counts[ix] for ix in ixs if vals[ix]!=0}
+
+    return vc_dct
+
 def lesion_in_infarcted_hemisphere(hemispheres,
                                    identification_mask,
-                                   lesion, dil_mm=5):
+                                   lesion, dil_mm=5, max_contralater_lesion_ml=10):
 	"""
-    hemispheres is an sitk.Image mask representing left and right hemispheres
-    identification_mask is an sitk.Image mask for selecting the right hemisphere
-    lesion is an sitk.Image mask with separate distinct connected components of the lesion
-    returns only separate parts of the lesion in the infarcted hemisphere
-    """
+	hemispheres is an sitk.Image mask representing left and right hemispheres
+	identification_mask is an sitk.Image mask for selecting the right hemisphere
+	lesion is an sitk.Image mask with separate distinct connected components of the lesion
+	returns only separate parts of the lesion in the infarcted hemisphere
+	"""
 	# select the infarcted half of the brain
-	select_roival = lesion_in_roimask_value(hemispheres, identification_mask)
-	infarcted_hemisphere = sitk_dilate_mm((hemispheres == select_roival) * 1, dil_mm)
+	count_dct = lesion_in_roimask_value(hemispheres, identification_mask)
+	if len(count_dct)==0:
+		infarcted_hemisphere = sitk_dilate_mm((hemispheres>0) * 1, dil_mm)
+	else:
+		select_roival = list(count_dct.keys())[0]
+		infarcted_hemisphere = sitk_dilate_mm((hemispheres == select_roival) * 1, dil_mm)
+
+	if len(count_dct)>1:
+		contralateral_lesion_volume_ml = list(count_dct.values())[1]*np.prod(hemispheres.GetSpacing())/1000
+		#sanity check to see of not large lesion in contralateral hemisphere
+		if contralateral_lesion_volume_ml>max_contralater_lesion_ml:
+			print('contralateral lesion presens, volume ml:', contralateral_lesion_volume_ml)
 	# select lesions with part in the infarcted hemisphere
-	lesion_in_hemishpere = select_lesion_in_roimask(infarcted_hemisphere, lesion)
-	lesion_in_hemishpere = sitk.Cast(np2sitk(lesion_in_hemishpere, hemispheres), sitk.sitkInt16)
-	return lesion_in_hemishpere
+	lesion_in_hemisphere = select_lesion_in_roimask(infarcted_hemisphere, lesion)
+	lesion_in_hemisphere = sitk.Cast(np2sitk(lesion_in_hemisphere, hemispheres), sitk.sitkInt16)
+	return lesion_in_hemisphere, infarcted_hemisphere
