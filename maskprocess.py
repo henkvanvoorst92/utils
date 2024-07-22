@@ -548,35 +548,49 @@ def nrrd_label_dict(seg_nrrd_file,only_renamed_segments=True):
     return segment_dict
 
 
-def multimask2singlemask(mask, value, p_sav=None):
+def multimask2singlemask(mask, value, p_sav=None, addname='', ID_splitter=None):
 	"""
-    Selects a subclass (value) of the a mask with multiple values (mask)
-    saves or returns it
-    """
+	Selects a subclass (value) of the a mask with multiple values (mask)
+	saves or returns it
+	"""
 	if isinstance(mask, str):
 		file = os.path.basename(mask)
+		if ID_splitter is None:
+			file = file.replace('.nii.gz', addname+'.nii.gz')
+		else:
+			file = file.split(ID_splitter)[0]+addname+'.nii.gz'
 		if p_sav is not None:
 			os.makedirs(p_sav, exist_ok=True)
 			p_sav = os.path.join(p_sav, file)
 		mask = sitk.ReadImage(mask)
-	mask = sitk.Cast((mask == value) * 1, sitk.sitkInt16)
-
-	sitk.WriteImage(mask, p_sav)
+	if isinstance(value, int):
+		mask = sitk.Cast((mask == value) * 1, sitk.sitkInt16)
+	elif isinstance(value, list):
+		mask_np = sitk.GetArrayFromImage(mask)
+		mask_out = np.zeros_like(mask_np)
+		# Iterate over selected values to create the binary mask
+		for v in value:
+			mask_out += (mask_np==v)*1
+		mask = sitk.Cast(np2sitk((mask_out>0)* 1,mask), sitk.sitkInt16)
+	if p_sav is not None:
+		sitk.WriteImage(mask, p_sav)
 	return mask
 
 def select_lesion_in_roimask(roimask, lesion):
-	"""
+    """
     Separates lesion in connected components
     returns a new mask of lesion components that are
     """
-	if isinstance(roimask, sitk.Image):
-		roimask = sitk.GetArrayFromImage(roimask)
-	if isinstance(lesion, sitk.Image):
-		lesion = sitk.GetArrayFromImage(lesion)
+    if isinstance(roimask, sitk.Image):
+        roimask = sitk.GetArrayFromImage(roimask)
+    if isinstance(lesion, sitk.Image):
+        lesion = sitk.GetArrayFromImage(lesion)
 
-	labels, nc = label(lesion)
-	labels_in_roimask = np.unique(labels * roimask)
-	return np.isin(labels, labels_in_roimask) * 1
+    labels, nc = label(lesion)
+    labels_in_roimask = np.unique(labels * roimask)
+    labels_in_roimask = labels_in_roimask[labels_in_roimask!=0]
+    return np.isin(labels, labels_in_roimask) * 1
+
 
 def lesion_in_roimask_value(roimask, lesion):
     """
