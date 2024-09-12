@@ -16,7 +16,8 @@ def ants_register(fixed,
                   rp=None,
                   pid=None,
                   p_transform=None,
-                  clip_range=None):
+                  clip_range=None,
+                  return_tx=False):
     """
     Registers the atlas to the scan
     then uses the transformation matrix
@@ -92,12 +93,14 @@ def ants_register(fixed,
             os.makedirs(pid_reg)
         ants.image_write(moved, os.path.join(pid, '{}moved.nii.gz'.format(addname)))
     if p_transform is not None:
-        ants.write_transform(ants.read_transform(mytx['fwdtransforms'][0]),
+        ants.write_transform(ants.read_transform(mytx['fwdtransforms'][1]),
                              os.path.join(p_transform , '{}fwd.mat'.format(addname)))
         ants.write_transform(ants.read_transform(mytx['invtransforms'][0]),
                              os.path.join(p_transform, '{}inv.mat'.format(addname)))
-
-    return sitk.Cast(ants2sitk(moved), sitk.sitkInt16)
+    if return_tx:
+        return sitk.Cast(ants2sitk(moved), sitk.sitkInt16), mytx
+    else:
+        return sitk.Cast(ants2sitk(moved), sitk.sitkInt16)
 
 def ants_register_roi_atlas(fixed,
                             moving,  # the atlas image
@@ -172,7 +175,7 @@ def ants_register_roi_atlas(fixed,
 
         ants.image_write(mv_roi, os.path.join(pid_reg, '{}_reg.nii.gz'.format(addname)))
 
-        ants.write_transform(ants.read_transform(mytx['fwdtransforms'][0]),
+        ants.write_transform(ants.read_transform(mytx['fwdtransforms'][1]),
                              os.path.join(pid_reg, '{}fwd.mat'.format(addname)))
         ants.write_transform(ants.read_transform(mytx['invtransforms'][0]),
                              os.path.join(pid_reg, '{}inv.mat'.format(addname)))

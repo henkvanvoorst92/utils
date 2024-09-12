@@ -137,3 +137,4 @@ def bland_altman_plot(data1, data2, *args, **kwargs):
 			 va="top", transform=trans)
 	plt.text(xloc, low + offset, '%.0f' % low, ha="right", va="bottom",
 			 transform=trans)
+

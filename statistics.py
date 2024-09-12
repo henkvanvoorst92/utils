@@ -49,7 +49,7 @@ def KKW(var, split_dct):
 
 # Perform Mann-Withney-U test on two groups of var in different DataFrames
 def MWU(df1, df2, var):
-    t, p = stats.mannwhitneyu(df1[var], df2[var], alternative='two-sided')
+    t, p = stats.mannwhitneyu(df1[var], df2[var], alternative='two-sided',  nan_policy='omit')
     return t, p
 
 
@@ -74,17 +74,25 @@ def crosstab_descr(crosstab):
 
 
 # Descriptive statistics of 2 normal disctributed groups (mean, std)
-def normdist_descr(x1, x2):
-    m1, std1 = int(x1.mean()), round(x1.std(), 1)
-    m2, std2 = int(x2.mean()), round(x2.std(), 1)
+def normdist_descr(x1, x2, digits=0):
+    m1, std1 = round(x1.mean(),digits), round(x1.std(), digits)
+    m2, std2 = round(x2.mean(),digits), round(x2.std(), digits)
+    if digits==0:
+        m1, std1 = int(m1), int(std1)
+        m2, std2 = int(m2), int(std2)
+
     return ["{} ({})".format(m1, std1), "{}({})".format(m2, std2)]
 
 
 # Descescriptive statistics of 2 non-normal disctributed groups (median, 25-75 IQR)
-def non_normdist_descr(x1, x2):
+def non_normdist_descr(x1, x2, digits=1):
     x1, x2 = x1.dropna(), x2.dropna()
-    m1, (iq1a, iq1b) = int(x1.median()), np.percentile(x1, [25, 75]).round()
-    m2, (iq2a, iq2b) = int(x2.median()), np.percentile(x2, [25, 75]).round()
+    m1, (iq1a, iq1b) = round(x1.median(),digits), np.percentile(x1, [25, 75]).round(digits)
+    m2, (iq2a, iq2b) = round(x2.median(),digits), np.percentile(x2, [25, 75]).round(digits)
+    if digits==0:
+        m1, iq1a, iq1b = int(m1), int(iq1a), int(iq1b)
+        m2, iq2a, iq2b = int(m2), int(iq2a), int(iq2b)
+
     out1 = "{} ({};{})".format(m1, int(iq1a), int(iq1b))
     out2 = "{} ({};{})".format(m2, int(iq2a), int(iq2b))
     return [out1, out2]
@@ -122,7 +130,10 @@ def to_categories(df, var, addname='_cat'):
 # a dataframe df with all the data
 # a variable in the dataframe to split the data into two groups
 # a dictionary (dct_type) with variable name - analysis type (mwu, t-test, Chi2, ANOVA, kkw)
-def all_statistics(df, splitvar, dct_type, verbal=False, digits=None):
+def all_statistics(df, splitvar, dct_type,
+                   verbal=False, digits=None,
+                   t_test_digits=1,
+                   mwu_digits=1):
     dct = split_data(df, splitvar)
     ks = list(dct.keys())
     no_groups = len(ks)
@@ -138,7 +149,7 @@ def all_statistics(df, splitvar, dct_type, verbal=False, digits=None):
 
         if datatype == 'mwu':
             statistic, pvalue = MWU(df1, df2, var)
-            descr = normdist_descr(df1[var], df2[var])
+            descr = non_normdist_descr(df1[var], df2[var], digits=mwu_digits)
             # paste all output in a new df row
             newrow = descr
             newrow.extend([statistic, pvalue, 'MWU', pvalue < 0.05,
@@ -147,7 +158,7 @@ def all_statistics(df, splitvar, dct_type, verbal=False, digits=None):
 
         elif datatype == 't-test':
             statistic, pvalue = T_test(df1, df2, var)
-            descr = non_normdist_descr(df1[var], df2[var])
+            descr = normdist_descr(df1[var], df2[var], digits=t_test_digits)
             newrow = descr
             newrow.extend([statistic, pvalue, 'T-test', pvalue < 0.05,
                            pvalue < 0.001, pvalue < 0.0001, pvalue < 1e-5])
@@ -335,3 +346,54 @@ def get_significance_symbol(p_value, sign_dct):
         if p_value<p_thresh:
             symbol = sym
     return symbol
+
+def rank_variables(df_col, dct_type):
+    out = []
+    for term in df_col:
+        val = np.NaN
+        for k,v in dct_type.items():
+            if k in term or k==term:
+                val = v
+        out.append(val)
+    return out
+
+def final_results_column(df, digits=1, estimate_var='Estimate'):
+    #creates a single column for a results table
+    def format_row(row):
+        estimate = round(row[estimate_var], digits)
+        lower_ci = round(row['Lower_CI'], digits)
+        upper_ci = round(row['Upper_CI'], digits)
+        p_value = row['p_value']
+
+        # Determine the significance stars
+        if p_value < 0.00001:
+            stars = '***'
+        elif p_value < 0.001:
+            stars = '**'
+        elif p_value < 0.05:
+            stars = '*'
+        else:
+            stars = ''
+
+        # Format the new column
+        return f"{estimate} ({lower_ci}; {upper_ci}){stars}"
+
+    # Apply the formatting function to each row
+    #df['Formatted'] = df.apply(format_row, axis=1)
+    return df.apply(format_row, axis=1)
+
+def add_model_performance(data,
+                          perf_vars=['Log_Likelihood', 'Pseudo_R_Squared', 'AIC', 'X2_brant', 'brant_p_value'],
+                         digits=[0,2,0,1,3]):
+
+    ix, out = [],[]
+    for (pv,digit) in zip(perf_vars,digits):
+        ix.append(pv)
+        if digit>0:
+            pv_out = round(data[pv][0],digit)
+        else:
+            pv_out = round(data[pv][0])
+        out.append(pv_out)
+
+    out = pd.DataFrame(data=out, index=ix)
+    return out
