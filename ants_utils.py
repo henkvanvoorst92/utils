@@ -16,7 +16,7 @@ def sitk2ants(sitk_image):
     return ants_image
 
 
-def ants2sitk(ants_image):
+def ants2sitk(ants_image, type=np.int16):
     """
     Convert an ANTs image to a SimpleITK image.
 
@@ -27,7 +27,7 @@ def ants2sitk(ants_image):
     SimpleITK.Image: The converted SimpleITK image.
     """
     # Convert the ANTs image to a NumPy array
-    np_image = ants_image.numpy().astype(np.int16)
+    np_image = ants_image.numpy().astype(type)
     np_image = np.transpose(np_image, (2, 1, 0))
     # Create a SimpleITK image from the NumPy array
     sitk_image = sitk.GetImageFromArray(np_image)

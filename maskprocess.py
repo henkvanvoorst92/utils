@@ -563,6 +563,8 @@ def multimask2singlemask(mask, value, p_sav=None, addname='', ID_splitter=None):
 			os.makedirs(p_sav, exist_ok=True)
 			p_sav = os.path.join(p_sav, file)
 		mask = sitk.ReadImage(mask)
+	elif isinstance(mask, sitk.Image):
+		mask = sitk.Image(mask)
 	if isinstance(value, int):
 		mask = sitk.Cast((mask == value) * 1, sitk.sitkInt16)
 	elif isinstance(value, list):

@@ -93,7 +93,11 @@ def ants_register(fixed,
             os.makedirs(pid_reg)
         ants.image_write(moved, os.path.join(pid, '{}moved.nii.gz'.format(addname)))
     if p_transform is not None:
-        ants.write_transform(ants.read_transform(mytx['fwdtransforms'][1]),
+        if 'SyN' in rp['type_of_transform']:
+            ix = 1
+        else:
+            ix = 0
+        ants.write_transform(ants.read_transform(mytx['fwdtransforms'][ix]),
                              os.path.join(p_transform , '{}fwd.mat'.format(addname)))
         ants.write_transform(ants.read_transform(mytx['invtransforms'][0]),
                              os.path.join(p_transform, '{}inv.mat'.format(addname)))
@@ -175,8 +179,9 @@ def ants_register_roi_atlas(fixed,
 
         ants.image_write(mv_roi, os.path.join(pid_reg, '{}_reg.nii.gz'.format(addname)))
 
-        ants.write_transform(ants.read_transform(mytx['fwdtransforms'][1]),
-                             os.path.join(pid_reg, '{}fwd.mat'.format(addname)))
+        ix = 1 if 'SyN' in rp['type_of_transform'] else 0
+        ants.write_transform(ants.read_transform(mytx['fwdtransforms'][ix]),
+                             os.path.join(p_transform , '{}fwd.mat'.format(addname)))
         ants.write_transform(ants.read_transform(mytx['invtransforms'][0]),
                              os.path.join(pid_reg, '{}inv.mat'.format(addname)))
 
@@ -233,8 +238,9 @@ def register_roi_atlas(scan,
 
         ants.image_write(mv_roi, os.path.join(pid_reg, '{}_reg.nii.gz'.format(addname)))
 
-        ants.write_transform(ants.read_transform(mytx['fwdtransforms'][0]),
-                             os.path.join(pid_reg, '{}fwd.mat'.format(addname)))
+        ix = 1 if 'SyN' in rp['type_of_transform'] else 0
+        ants.write_transform(ants.read_transform(mytx['fwdtransforms'][ix]),
+                             os.path.join(p_transform , '{}fwd.mat'.format(addname)))
         ants.write_transform(ants.read_transform(mytx['invtransforms'][0]),
                              os.path.join(pid_reg, '{}inv.mat'.format(addname)))
 
@@ -422,6 +428,165 @@ def register_images_sitk(fixed_image, moving_image, args):
     moved_image = sitk.Cast(moved_image, sitk.sitkInt16)
 
     return moved_image, final_transform
+
+
+def get_registration_matrix(fixed,
+                            moving,
+                            rp=None,
+                            clip_range=None):
+    if clip_range is not None:
+        if isinstance(fixed, sitk.Image) and isinstance(moving, sitk.Image):
+            fixed = sitk.Image(sitk.Clamp(fixed, lowerBound=clip_range[0], upperBound=clip_range[1]))
+            fixed = sitk2ants(sitk.Cast(fixed, sitk.sitkFloat32))
+            moving = sitk.Image(sitk.Clamp(moving, lowerBound=clip_range[0], upperBound=clip_range[1]))
+            moving = sitk2ants(sitk.Cast(moving, sitk.sitkFloat32))
+
+    if isinstance(fixed, sitk.Image):
+        fixed = sitk2ants(sitk.Cast(fixed, sitk.sitkFloat32))
+
+    if isinstance(moving, sitk.Image):
+        moving = sitk2ants(sitk.Cast(sitk.Image(moving), sitk.sitkFloat32))
+
+    if rp is None:
+        rp = {'type_of_transform': 'TRSAA',
+              'fix_bm': None,
+              'mv_bm': None,
+              'metric': 'mattes',
+              'mask_all_stages': False,
+              'default_value': 0,
+              'interpolator': 'linear'  # or 'nearestNeighbor''bSpline'
+              }
+        print(rp)
+        print('Using default registration params')
+
+    mytx = ants.registration(fixed, moving,
+                             type_of_transform=rp['type_of_transform'],
+                             mask=rp['fix_bm'],
+                             moving_mask=rp['mv_bm'],
+                             mask_all_stages=rp['mask_all_stages'],
+                             aff_metric=rp['metric'],
+                             syn_metric=rp['metric']
+                             )
+
+    return mytx
+
+
+def register_slab(fixed,
+                  template_slab,
+                  mv_slab=None,
+                  interpolation='nearestNeighbor',
+                  clip_range=(-50, 150),
+                  slabname=None
+                  ):
+    """
+    fixed: an sitk.Image in the target space
+    template_slab: an sitk.Image ctp template slab to move (registration on cbf/cbv values vs fixed ct is not feasible)
+    mv_slab: if defined (sitk.Image or list of sitk.Image) returns the coregisterd roi (segmentation) mask instead of template image
+    interpolator: interpolation setting for mv_slab 'nearestNeighbor' or 'linear' are generally used
+
+    returns registered template_slab, mv_slab, or list of mv_slabs
+    """
+
+    # Registration below uses default mattes and TRSAA registration settings
+    tx = get_registration_matrix(
+        sitk.Clamp(fixed, lowerBound=clip_range[0], upperBound=clip_range[1]),
+        sitk.Clamp(template_slab, lowerBound=clip_range[0], upperBound=clip_range[1])
+    )
+    ants.write_transform(ants.read_transform(tx['fwdtransforms'][0]), d[f'ctp2ncct_reg_mat{slabname}'])
+
+    if mv_slab is None:
+        # returns template slab for debugging
+        mv_out = ants.apply_transforms(sitk2ants(sitk.Cast(fixed, sitk.sitkFloat32)),
+                                       sitk2ants(sitk.Cast(template_slab, sitk.sitkFloat32)),
+                                       interpolator='linear',
+                                       transformlist=tx['fwdtransforms'])
+        mv_out = ants2sitk(mv_out)
+
+    # mv_slab is image --> move that image to fixed space
+    elif isinstance(mv_slab, sitk.Image):
+        mv_out = ants.apply_transforms(sitk2ants(sitk.Cast(fixed, sitk.sitkFloat32)),
+                                       sitk2ants(sitk.Cast(mv_slab, sitk.sitkFloat32)),
+                                       interpolator=interpolator,
+                                       transformlist=tx['fwdtransforms'])
+        mv_out = ants2sitk(mv_out)
+
+    # if mv_slab is list of images move each image to fixed space and return output
+    elif isinstance(mv_slab, list):
+        # multible slabs to move are present in mv_slab
+        mv_out = []
+        for mv in mv_slab:
+            mvo = ants.apply_transforms(sitk2ants(sitk.Cast(fixed, sitk.sitkFloat32)),
+                                        sitk2ants(sitk.Cast(mv, sitk.sitkFloat32)),
+                                        interpolator=interpolator,
+                                        transformlist=tx['fwdtransforms'])
+            mv_out.append(ants2sitk(mvo))
+
+    return mv_out
+
+
+
+def register_slabs_dct(slab_dct,
+                       fixed_img,
+                       key_reg_slab=None,
+                       rp=None,
+                       clip_range=()):
+    """
+    slab_dct: key=image name, value= list of slabs
+    fixed_img: sitk.Image in target space
+    key_reg_slab: if not none, key in slab_dict which image slabs should be used for coregistration
+                  all other image slabs are moved using registration params from this image
+    rp: dict of registration parameters
+    """
+    if len(clip_range)>0:
+        fixed_img = sitk.Clamp(fixed_img, lowerBound=clip_range[0], upperBound=clip_range[1])
+
+    if key_reg_slab is not None:
+        reg_slabs = slab_dct[key_reg_slab]
+
+        # if multiple slabs (a list of slabs), register one by one
+        if isinstance(reg_slabs, list):
+            print('Registration of multiple slabs')
+            out_dct = {k: [] for k in [*slab_dct.keys(), 'reg_mat']}
+            for i in range(len(reg_slabs)):
+                tx = get_registration_matrix(
+                    fixed_img,
+                    sitk.Clamp(reg_slabs[i], lowerBound=clip_range[0], upperBound=clip_range[1]
+                              ) if len(clip_range)>0 else reg_slabs[i],
+                    rp=rp
+                )
+                out_dct['reg_mat'].append(tx)
+
+                for k, slab in slab_dct.items():
+                    print('moving', i, k)
+                    mv_slab = ants.apply_transforms(sitk2ants(sitk.Cast(fixed_img, sitk.sitkFloat32)),
+                                                    sitk2ants(sitk.Cast(slab[i], sitk.sitkFloat32)),
+                                                    interpolator='nearestNeighbor' if ('seg' in k or 'mask' in k) else 'linear',
+                                                    transformlist=tx['fwdtransforms'])
+                    out_dct[k].append(sitk.Cast(ants2sitk(mv_slab), sitk.sitkInt16))
+        # if a single slab, it is easier; every value is a path
+        else:
+            print('Single slab registration')
+            out_dct = {}
+            tx = get_registration_matrix(
+                fixed_img,
+                sitk.Clamp(reg_slabs, lowerBound=clip_range[0], upperBound=clip_range[1]) if len(clip_range)>0 else reg_slabs,
+                rp=rp
+            )
+            out_dct['reg_mat'] = tx
+
+            for k, slab in slab_dct.items():
+                print('moving', k)
+                mv_slab = ants.apply_transforms(sitk2ants(sitk.Cast(fixed_img, sitk.sitkFloat32)),
+                                                sitk2ants(sitk.Cast(slab, sitk.sitkFloat32)),
+                                                interpolator='nearestNeighbor' if 'seg' in k else 'linear',
+                                                transformlist=tx['fwdtransforms'])
+                out_dct[k] = sitk.Cast(ants2sitk(mv_slab), sitk.sitkInt16)
+
+    else:
+        print('implement reg_slabs')
+
+    return out_dct
+
 
 ### tryout to get it to work on cmdline
 # def itkelastix_default_arg_parser():

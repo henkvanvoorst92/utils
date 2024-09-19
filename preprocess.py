@@ -51,7 +51,7 @@ def find_volume_nii(p, remove_small=None):
     return file_out,img_out
 
 
-def assert_resliced_or_tilted(path,scanname='NCCT', ID='',file=None):
+def assert_resliced_or_tilted(path,scanname='', ID='',file=None):
 	resl_tilted = [os.path.join(path,f) for f in os.listdir(path) \
 				   if ('tilt' in f.lower() or 'eq' in f.lower()) and scanname.lower() in f.lower()]
 	if len(resl_tilted)>0:

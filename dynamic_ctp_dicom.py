@@ -9,6 +9,7 @@ from utils.dicomutils import sitk2generic_ct
 import datetime
 from utils.preprocess import sitk_flip_AP
 
+
 def preprocess_ctp(input_ctp):
     # changes dimensions according to sorens requirements for example_4d_sitk_to_DICOM
     vol3d = input_ctp[:, :, :, 0]
@@ -23,9 +24,10 @@ def preprocess_ctp(input_ctp):
     return dyn4d
 
 
-def example_4d_sitk_to_DICOM(sitkimage,opfolder):
-
+def example_4d_sitk_to_DICOM(sitkimage, opfolder, flip=False):
     arr4d = sitk.GetArrayViewFromImage(sitkimage)
+    if flip:
+        arr4d = np.flip(arr4d, axis=1)
     spacing = sitkimage.GetSpacing()
 
     shared_header = {'SeriesInstanceUID': pydicom.uid.generate_uid(),
@@ -46,15 +48,14 @@ def example_4d_sitk_to_DICOM(sitkimage,opfolder):
 
     nframes = arr4d.shape[3]
     nslices = arr4d.shape[2]
-    start_time = datetime.datetime(year=2024,month=1,day=1,hour=12,minute=00,second=0)
+    start_time = datetime.datetime(year=2024, month=1, day=1, hour=12, minute=00, second=0)
     current_datetime = start_time
     delta_t = 1.00
     IOP = sitkimage.GetDirection()
     instance_number_offset = 1
     for iframe in range(nframes):
-        current_frame_img = sitk.GetImageFromArray(arr4d[:,:,:,iframe])
+        current_frame_img = sitk.GetImageFromArray(arr4d[:, :, :, iframe])
         current_frame_img.CopyInformation(sitkimage)
-
 
         shared_header["AcquisitionDate"] = current_datetime.strftime("%Y%m%d")
         shared_header["AcquisitionTime"] = current_datetime.strftime("%H%M%S.%f")
@@ -63,8 +64,8 @@ def example_4d_sitk_to_DICOM(sitkimage,opfolder):
         shared_header["StudyDate"] = start_time.strftime("%Y%m%d")
         shared_header["StudyTime"] = start_time.strftime("%H%M%S")
 
-
-        sitk2generic_ct(current_frame_img, ct_outfolder=opfolder,instance_number_start=instance_number_offset,seriesheader=shared_header)
+        sitk2generic_ct(current_frame_img, ct_outfolder=opfolder, instance_number_start=instance_number_offset,
+                        seriesheader=shared_header)
 
         instance_number_offset += arr4d.shape[3]
         current_datetime = start_time + datetime.timedelta(seconds=delta_t)
