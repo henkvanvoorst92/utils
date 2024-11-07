@@ -637,3 +637,14 @@ def lesion_in_infarcted_hemisphere(hemispheres,
 	lesion_in_hemisphere = select_lesion_in_roimask(infarcted_hemisphere, lesion)
 	lesion_in_hemisphere = sitk.Cast(np2sitk(lesion_in_hemisphere, hemispheres), sitk.sitkInt16)
 	return lesion_in_hemisphere, infarcted_hemisphere
+
+
+def get_headmask(p_roimask, return_sitk=False):
+	hm = None
+	if os.path.exists(p_roimask):
+		roimask = sitk.ReadImage(p_roimask)
+		hm = (sitk.GetArrayFromImage(roimask) > 0) * 1
+		hm = np_slicewise(hm, [binary_fill_holes], repeats=1, dim=0)
+		if return_sitk:
+			hm = sitk.Cast(np2sitk(hm, roimask), sitk.sitkInt16)
+	return hm

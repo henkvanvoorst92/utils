@@ -587,6 +587,20 @@ def register_slabs_dct(slab_dct,
 
     return out_dct
 
+def lateral_flip_coregister(image:sitk.Image, rp:dict, clip_range=(0,100), return_sitk=False):
+    #flips and then coregisters image back
+    #returns numpy by default
+    flip = np2sitk(np.flip(sitk.GetArrayFromImage(image), axis=2), image)
+    print('Registration')
+    flipreg = ants_register(image,
+                            flip,
+                            rp=rp,
+                            clip_range=clip_range)
+    flipreg	= sitk.Cast(flipreg, sitk.sitkInt16)
+    if not return_sitk:
+        flipreg = sitk.GetArrayFromImage(flipreg)
+
+    return flipreg
 
 ### tryout to get it to work on cmdline
 # def itkelastix_default_arg_parser():

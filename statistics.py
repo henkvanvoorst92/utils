@@ -357,13 +357,13 @@ def rank_variables(df_col, dct_type):
         out.append(val)
     return out
 
-def final_results_column(df, digits=1, estimate_var='Estimate'):
+def final_results_column(df, digits=1, estimate_var='Estimate', lower_var='lower', upper_var='upper', p_var='p_value'):
     #creates a single column for a results table
     def format_row(row):
         estimate = round(row[estimate_var], digits)
-        lower_ci = round(row['Lower_CI'], digits)
-        upper_ci = round(row['Upper_CI'], digits)
-        p_value = row['p_value']
+        lower_ci = round(row[lower_var], digits)
+        upper_ci = round(row[upper_var], digits)
+        p_value = row[p_var]
 
         # Determine the significance stars
         if p_value < 0.00001:

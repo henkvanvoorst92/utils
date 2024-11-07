@@ -417,6 +417,8 @@ def hdbet_brain_segment_all(folder_in,
 
 
 
+
+
 # t = mdata['AcquisitionDateTime']
 # td = mdata['timedifference']
 # exposures = mdata['ExposureinmAs'].astype(np.float32).values

@@ -26,6 +26,7 @@ def preprocess_ctp(input_ctp):
 
 def example_4d_sitk_to_DICOM(sitkimage, opfolder, flip=False):
     arr4d = sitk.GetArrayViewFromImage(sitkimage)
+
     if flip:
         arr4d = np.flip(arr4d, axis=1)
     spacing = sitkimage.GetSpacing()

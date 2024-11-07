@@ -498,3 +498,19 @@ def read_list_from_txt(path):
             # Strip the newline character and add to the list
             retrieved_list.append(ast.literal_eval(line.strip()))
     return retrieved_list
+
+def image_or_path_load(img_or_path):
+    if isinstance(img_or_path, sitk.Image):
+        out = sitk.Image(out)
+    elif isinstance(img_or_path, str):
+        if os.path.exists(img_or_path):
+            out = sitk.ReadImage(img_or_path)
+        else:
+            out = None
+            #raise ValueError('does not exist:',img_or_path)
+    else:
+        out = None
+        #raise ValueError("img_or_path is not sitk.Image or a path",img_or_path)
+    if out is not None:
+        out = sitk.Cast(out, sitk.sitkInt16)
+    return out
